@@ -34,6 +34,7 @@ const data: ContentLibraryData = {
   },
   jobs: [
     {
+      id: "research-assistant",
       title: "Research Assistant",
       org: "Analytical University",
       location: "Remote",
@@ -61,6 +62,7 @@ const data: ContentLibraryData = {
   ],
   leadership: [
     {
+      id: "teaching-assistant",
       title: "Teaching Assistant",
       org: "CS Department",
       location: "On campus",

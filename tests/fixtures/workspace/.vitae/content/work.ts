@@ -1,5 +1,6 @@
 export default [
   {
+    id: 'research-assistant',
     title: 'Research Assistant',
     org: 'Analytical University',
     location: 'Remote',

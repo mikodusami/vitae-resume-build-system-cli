@@ -1,6 +1,7 @@
 export default {
   entries: [
     {
+      id: 'teaching-assistant',
       title: 'Teaching Assistant',
       org: 'CS Department',
       location: 'On campus',

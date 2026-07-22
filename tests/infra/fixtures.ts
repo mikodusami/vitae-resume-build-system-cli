@@ -89,6 +89,7 @@ export function registerValidWorkspace(loader: FakeModuleLoader, workspace: Fake
   });
   loader.set(join(workspace.contentDir, 'work.ts'), [
     {
+      id: 'research-assistant',
       title: 'Research Assistant',
       org: 'Analytical University',
       location: 'Remote',
@@ -109,6 +110,7 @@ export function registerValidWorkspace(loader: FakeModuleLoader, workspace: Fake
   loader.set(join(workspace.contentDir, 'leadership.ts'), {
     entries: [
       {
+        id: 'teaching-assistant',
         title: 'Teaching Assistant',
         org: 'CS Department',
         location: 'On campus',

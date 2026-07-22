@@ -38,9 +38,14 @@ export function makeEducation(overrides: Partial<Education> = {}): Education {
   };
 }
 
-/** Builds a job (or, unchanged in shape, a leadership entry). */
-export function makeJob(overrides: Partial<Job> = {}): Job {
+/**
+ * Builds a job (or, unchanged in shape, a leadership entry).
+ *
+ * `id` is required because tests reference it by name — see `makeProject`.
+ */
+export function makeJob(id: string, overrides: Partial<Job> = {}): Job {
   return {
+    id,
     title: 'Research Assistant',
     org: 'Analytical University',
     location: 'Remote',
@@ -93,9 +98,9 @@ export function makeLibraryData(overrides: Partial<ContentLibraryData> = {}): Co
   return {
     header: makeHeader(),
     education: makeEducation(),
-    jobs: [makeJob()],
+    jobs: [makeJob('ra')],
     projects: [makeProject('etl'), makeProject('ranker')],
-    leadership: [makeJob({ title: 'Teaching Assistant', org: 'CS Department' })],
+    leadership: [makeJob('ta', { title: 'Teaching Assistant', org: 'CS Department' })],
     awards: { label: 'Awards', entries: ["Dean's List", 'Hackathon Winner'] },
     claims: [makeClaim('etl'), makeClaim('ranker')],
     variants: [makeVariant('data-engineer')],
