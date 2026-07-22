@@ -10,6 +10,7 @@ Two ways in, depending on what you want.
 | [Command reference](commands.md)          | every command, every flag, exit codes, JSON output           |
 | [Content schema](content-schema.md)       | every field of every content file, and the rules on each     |
 | [The claims registry](claims.md)          | defensibility tiers and the review loop — read this one      |
+| [Git workflow](git-workflow.md)           | commit, archive, send, and recall what you actually applied with |
 | [Theming](theming.md)                     | fonts, sizes, spacing, and the unit system that will bite you |
 | [Troubleshooting](troubleshooting.md)     | every error code, what causes it, and how to fix it          |
 
