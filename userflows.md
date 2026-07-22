@@ -7,6 +7,103 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Layer 3 — Theme & Rendering
+
+The tool can now turn a composed document into a real `.docx` and into plain
+text. Writing files is still a later layer's job, so the renderer returns a
+buffer and the CLI prints — the one script that writes does so explicitly.
+
+**Setup:** `npm run build` (the linked `vitae` runs `dist/`).
+
+### Flow 3.A — Render your content as plain text
+
+```bash
+cd tests/fixtures/workspace && vitae text software-engineer
+```
+
+Expect a readable resume: `SUMMARY`, `EDUCATION`, `SKILLS`, `EXPERIENCE`,
+`PROJECTS`, `LEADERSHIP & AWARDS`, with dates right-aligned at column 80 and
+bullets as `- `. Try `--width 60` and watch the dates move.
+
+This renderer takes **no theme at all**. That is the point of the flow: if the
+document IR had quietly become docx-shaped, this output would be impossible to
+produce.
+
+### Flow 3.B — Produce a real .docx and open it
+
+```bash
+npx vite-node examples/renderDocx.ts data-engineer /tmp/vitae-demo.docx
+```
+
+Expect `theme: Calibri, name size 32 half-points` — the `32` comes from the
+fixture workspace's `theme.ts`, proving your theme merged over the tool's
+defaults (the default is 30). Then:
+
+```bash
+file /tmp/vitae-demo.docx && open /tmp/vitae-demo.docx
+```
+
+Expect `Microsoft Word 2007+`, and a document that opens in Word with the name
+centered, ruled section headings, right-aligned dates, and real bullets.
+
+### Flow 3.C — A theme change moves the output
+
+Edit `tests/fixtures/workspace/.vitae/theme.ts` — try `font: 'Georgia'` and
+`sectionRule: { enabled: false }` — then rerun Flow 3.B and reopen the file.
+
+Expect the font to change and the rules under headings to disappear, with no
+source change anywhere. Note the file only ever states what you want changed;
+everything else comes from `DEFAULT_THEME`.
+
+Then break it deliberately: set `sizes: { body: -5 }`, or misspell `font` as
+`fonts`, and rerun. Expect a diagnostic that reads exactly like a content
+error — `theme.ts: sizes.body — Too small: …` — because theme validation
+routes through the same mapper.
+
+### Flow 3.D — The structural guarantees
+
+```bash
+npx vitest run tests/render/
+```
+
+Expect 30 passed. These are not smoke tests; they unzip the rendered buffer and
+assert on the actual OOXML:
+
+- bullets exist as `<w:numPr>` and **no literal `•` appears anywhere** — a
+  hard-coded bullet looks identical on screen but is not a list to Word, an
+  ATS, or a screen reader
+- split lines carry a right tab stop at the themed position, and moving
+  `rightTab` in the theme moves it in the XML
+- page size is written explicitly, so output is never silently A4
+- no run contains a newline
+- `docProps/core.xml` carries the title, creator, and derived keywords
+
+### Flow 3.E — The golden file is your regression signal
+
+```bash
+cat tests/render/golden/resume.txt
+```
+
+That committed file is the expected plain-text rendering. After any deliberate
+change to the document IR, regenerate it and read the diff — it is the fastest
+way to see what a domain change did to real output:
+
+```bash
+UPDATE_GOLDEN=1 npx vitest run tests/render/PlainTextRenderer.test.ts && git diff tests/render/golden/resume.txt
+```
+
+### Flow 3.F — The boundary still holds
+
+```bash
+npm run lint
+```
+
+`domain/` still cannot import `docx`, and `render/` cannot import from `cli/`
+or `app/`. The rendering layer knows about the domain; the domain has never
+heard of a font.
+
+---
+
 ## Layer 2 — Workspace & Content Loading
 
 The tool now reads a real `.vitae/` folder from disk. These flows use the
