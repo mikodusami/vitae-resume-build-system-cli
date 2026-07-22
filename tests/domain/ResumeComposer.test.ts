@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DOMAIN_ERROR_CODES } from '../../src/domain/errors/domainError.js';
 import { ResumeComposer, SECTION_HEADINGS } from '../../src/domain/services/ResumeComposer.js';
 import type { ResumeDocument } from '../../src/domain/document/resumeDocument.js';
-import { makeLibrary, makeProject, makeVariant } from './fixtures.js';
+import { makeHeader, makeLibrary, makeProject, makeVariant } from './fixtures.js';
 
 /** Composes, failing the test loudly if composition was expected to succeed. */
 function composeOrThrow(variantOverrides = {}): ResumeDocument {
@@ -102,6 +102,39 @@ describe('ResumeComposer', () => {
     expect(nameBlock.align).toBe('center');
     expect(nameBlock.runs[0]?.role).toBe('name');
     expect(nameBlock.runs[0]?.text).toBe('Ada Lovelace');
+  });
+
+  it('links an email and a bare URL in the contact line, but not a phone number', () => {
+    const doc = composeOrThrow();
+
+    const contactBlock = doc.sections[0]?.blocks[1];
+    expect(contactBlock?.kind).toBe('paragraph');
+    if (contactBlock?.kind !== 'paragraph') return;
+
+    // Fixture contact: ['ada@example.com', '555-0100', 'github.com/ada'].
+    // Each fragment is its own run so a mailto: or https: can attach to just
+    // that one, with separator runs carrying no href in between.
+    const linked = contactBlock.runs.filter((r) => r.text !== ' | ');
+    expect(linked.map((r) => r.text)).toEqual(['ada@example.com', '555-0100', 'github.com/ada']);
+    expect(linked[0]?.href).toBe('mailto:ada@example.com');
+    // A phone number has no dot and no @ — nothing to link it to, so it must
+    // stay plain text rather than the renderer inventing a target.
+    expect(linked[1]?.href).toBeUndefined();
+    expect(linked[2]?.href).toBe('https://github.com/ada');
+  });
+
+  it('leaves a contact entry with its own explicit scheme untouched', () => {
+    const library = makeLibrary({
+      header: makeHeader({ contact: ['mailto:ada@example.com', 'tel:+15550100'] }),
+    });
+    const result = new ResumeComposer().compose(makeVariant('v'), library);
+    if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
+
+    const contactBlock = result.value.sections[0]?.blocks[1];
+    if (contactBlock?.kind !== 'paragraph') throw new Error('expected a paragraph');
+
+    expect(contactBlock.runs[0]?.href).toBe('mailto:ada@example.com');
+    expect(contactBlock.runs[2]?.href).toBe('tel:+15550100');
   });
 
   it("prefers the variant's coursework over the education default", () => {
