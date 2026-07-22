@@ -63,16 +63,16 @@ export default {
 | `location`    | `string`          | non-empty                                    |
 | `degree`      | `string`          | non-empty                                    |
 | `date`        | `string`          | non-empty; free text                         |
-| `gpa`         | `GpaEntry?`       | optional; omit entirely to show no GPA line   |
+| `gpa`         | `GpaEntry?`       | optional; omit entirely to show no GPA        |
 | `gpa.label`   | `string`          | non-empty, e.g. `'Major GPA'` or `'GPA'`      |
 | `gpa.value`   | `string`          | non-empty, e.g. `'3.32'`                     |
 | `coursework`  | `string`          | may be empty                                 |
 
 Renders as two right-aligned lines — institution paired with location, degree
-paired with date — then, when `gpa` is present, a third line reading
-`Major GPA: 3.32`. `gpa` is absent entirely rather than an empty string when a
-resume shouldn't show one; there is no way to have the field present but
-blank.
+paired with date. When `gpa` is present it rides on the **same** line as the
+degree: `B.S. Computer Science, Major GPA: 3.32`. `gpa` is absent entirely
+rather than an empty string when a resume shouldn't show one; there is no way
+to have the field present but blank.
 
 `coursework` here is the default. A variant may override it with a more
 relevant list; the variant wins when its own `coursework` is non-empty.
@@ -308,8 +308,8 @@ never reorders anything, and neither does a variant:
 
 1. **Header** (no heading) — name, then the contact line, both centered
 2. **Summary** — the variant's `summary`
-3. **Education** — institution (location right-aligned), degree (date
-   right-aligned), then GPA if present, then coursework
+3. **Education** — institution (location right-aligned), degree with GPA
+   folded in if present (date right-aligned), then coursework
 4. **Skills** — one line per group: bold label, then body
 5. **Experience** — every job from `work.ts`
 6. **Projects** — the variant's `projectIds`, in order
