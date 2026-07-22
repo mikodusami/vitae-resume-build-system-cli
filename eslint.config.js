@@ -123,6 +123,16 @@ export default tseslint.config(
     },
   },
   {
+    // The CLI is the only layer allowed to talk to a terminal, but even here
+    // output goes through the OutputChannel seam — stdout carries the report
+    // and stderr carries everything else, which is what keeps `--json | jq`
+    // working. `output.ts` is the single sanctioned exception.
+    files: ['src/cli/**/*.ts'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
+  {
     // Rendering adapters consume the domain IR and infra's loading utilities.
     // They own presentation, so they must never be reached into by the domain
     // and must not know about command dispatch.
