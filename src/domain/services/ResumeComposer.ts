@@ -197,14 +197,29 @@ function classifyContactHref(value: string): string | undefined {
   return undefined;
 }
 
-/** Degree line with its date pushed right, then the selected coursework. */
+/**
+ * Institution/location, then degree/date, then GPA and coursework.
+ *
+ * Institution and degree sit on separate lines — each paired with its own
+ * right-aligned counterpart — rather than sharing one line the way the
+ * original layout did, because location and graduation date are different
+ * kinds of fact and neither reads well pushed to the far end of the other's
+ * line.
+ */
 function composeEducationBlocks(education: Education, variant: Variant): Block[] {
   const blocks: Block[] = [
-    splitLine(
-      [run(education.institution, 'body', ['bold']), run(`, ${education.degree}`, 'body')],
-      [run(education.date, 'meta')],
-    ),
+    splitLine([run(education.institution, 'body', ['bold'])], [run(education.location, 'meta')]),
+    splitLine([run(education.degree, 'body')], [run(education.date, 'meta')]),
   ];
+
+  if (education.gpa !== undefined) {
+    blocks.push(
+      paragraph([
+        run(`${education.gpa.label}: `, 'meta', ['bold']),
+        run(education.gpa.value, 'meta'),
+      ]),
+    );
+  }
 
   const coursework = variant.coursework.length > 0 ? variant.coursework : education.coursework;
   if (coursework.length > 0) {
