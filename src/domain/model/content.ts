@@ -37,6 +37,12 @@ export interface Education {
 
 /** A work experience entry. */
 export interface Job {
+  /**
+   * Referenced by a variant's `jobIds` to select and order which jobs it
+   * shows. Required on leadership entries too, since they share this type,
+   * but unused there — leadership always shows every entry.
+   */
+  readonly id: string;
   readonly title: string;
   readonly org: string;
   readonly location: string;
@@ -109,6 +115,8 @@ export interface Variant {
   readonly skills: readonly SkillGroup[];
   /** Ordered references into the project collection. */
   readonly projectIds: readonly string[];
+  /** Ordered references into `work.ts`; omitted shows every job, in file order. */
+  readonly jobIds?: readonly string[] | undefined;
 }
 
 /** The raw collections a {@link ContentLibrary} wraps. */
