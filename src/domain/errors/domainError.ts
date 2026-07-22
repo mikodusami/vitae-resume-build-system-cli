@@ -24,8 +24,14 @@ export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[keyof typeof DOMAIN_ER
  * meant to travel inside `Result`, not to be thrown.
  */
 export abstract class DomainError extends Error {
-  /** Machine-readable discriminator; see {@link DOMAIN_ERROR_CODES}. */
-  public abstract readonly code: DomainErrorCode;
+  /**
+   * Machine-readable discriminator; see {@link DOMAIN_ERROR_CODES}.
+   *
+   * Typed as `string` rather than `DomainErrorCode` so outer layers can extend
+   * this hierarchy with their own codes (loading, rendering) and the CLI keeps
+   * exactly one formatting path for every failure in the tool.
+   */
+  public abstract readonly code: string;
 
   protected constructor(message: string) {
     super(message);
