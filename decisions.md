@@ -5,6 +5,73 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Layer 4: Application Services
+
+### 2026-07-22 · The application layer never prints and never exits
+
+No `console`, no `process.exit`, no colors. Every use case returns a structured
+report and Layer 5 decides how to display it and what exit code it implies.
+This is the rule most likely to be violated under deadline pressure, so it is
+enforced by ESLint (`no-console`, `no-restricted-properties` on `process.exit`
+and `process.stdout`) rather than merely agreed — verified by probing it.
+
+If a report does not carry enough information for the CLI to print a good
+message, the fix is a richer report type, never a `console.log` in a use case.
+
+### 2026-07-22 · Enforcement policy lives in the use case, not the domain
+
+Layer 1 separated composing a document from judging its claims; this is where
+the call is made. A `cannot-defend` claim blocks writing, `--force` overrides
+it, and `check` evaluates without writing at all. Because that is one branch in
+one use case rather than a rule baked into the composer, changing it is
+trivial. Warnings never block: you must be able to build a resume for a project
+you have not reviewed yet — you just need to be told.
+
+### 2026-07-22 · `blocked` is a distinct status from `failed`
+
+Blocked means everything worked and policy refused to write. Failed means
+something is broken. Those are completely different experiences for the person
+reading the output, so the report type distinguishes them and the CLI prints
+them differently — blocked even suggests `--force`.
+
+### 2026-07-22 · One class per use case, one public method
+
+`BuildVariantUseCase.execute(...)`, not a service object with eleven methods
+that grows into a god class. Each use case names something the user can do and
+can be understood alone; adding a command means adding a class.
+
+### 2026-07-22 · The app layer declares the workspace slice it needs
+
+`WorkspacePaths` (root + distDir) is declared in `app/ports/` rather than
+importing infra's `Workspace`. `Workspace` satisfies it structurally, so the
+composition root passes one straight in — and the `app/` → `infra/` import
+stays forbidden. Same reasoning for injecting `joinPath`: the application layer
+never imports `node:path`.
+
+### 2026-07-22 · Load once per Application instance, memoizing the promise
+
+`build --all` reads content a single time and composes every variant from the
+same in-memory library. The *promise* is cached rather than its result, so two
+concurrent calls cannot both trigger a load — proven by a test that races
+`list`, `check`, and `buildAll` and asserts one load.
+
+### 2026-07-22 · Writes are atomic
+
+`FileArtifactWriter` writes to a temp file in the destination directory and
+renames it into place. `rename` within one filesystem is atomic, so a build
+interrupted mid-write leaves either the previous file or the new one — never a
+truncated `.docx` that Word refuses to open.
+
+### 2026-07-22 · Filenames come from a naming policy, and are sanitised
+
+`DefaultNaming` owns the `resume_llm_infrastructure.docx` convention so the
+archive layer can implement the same interface with a different strategy rather
+than duplicating it. Variant IDs are slugified rather than trusted: an ID
+becomes a path, and a path built from unsanitised input is how a stray `/`
+turns into a write somewhere surprising.
+
+---
+
 ## 2026-07-22 — Layer 3: Theme & Rendering
 
 ### 2026-07-22 · Theme enters the system at Layer 3 and nowhere earlier
