@@ -5,6 +5,75 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Layer 5: CLI, Composition Root & Scaffolding
+
+### 2026-07-22 · Milestone: first end-to-end run
+
+`vitae init && vitae build --all` in an empty directory produces four `.docx`
+files that open in Word. Every layer below is now exercised by one command.
+
+### 2026-07-22 · One composition root, one place adapters are constructed
+
+`bootstrap.ts` builds `JitiModuleLoader`, `FileContentRepository`,
+`ThemeLoader`, and `FileArtifactWriter`. Nothing else does. The one remaining
+`new` on a renderer lives in `RendererFactory`, which is where Layer 4
+deliberately put format selection — a pure, theme-injected renderer is not an
+I/O adapter, and moving it to bootstrap would spread format knowledge across
+two layers.
+
+### 2026-07-22 · Presentation is a strategy, and it forced the reports to be complete
+
+`ReportPresenter` has a human and a JSON implementation from the start. The
+JSON one costs almost nothing and buys machine-readable output for CI and
+scripting; more usefully, it is a check on the report types — if the human
+presenter ever needs data the JSON one cannot supply, something is being
+computed in the presentation layer that belongs in a use case.
+
+Reports go to stdout, everything else to stderr, so `vitae build --json | jq`
+works no matter what else the run wants to say. Colour routes through one
+`Colorizer` that disables itself under `--no-color`, `--json`, a non-TTY
+stdout, or `NO_COLOR`.
+
+### 2026-07-22 · Exit codes come from one policy table
+
+`0` success, `1` broken, `2` blocked by the claims policy. A CI step needs to
+react to "you have an undefendable claim" differently from "your content does
+not load". When a run is both broken *and* blocked it reports `1`: fix what is
+broken first, since the claim gate cannot be trusted until content loads.
+
+### 2026-07-22 · `init` bypasses the facade
+
+Every other command needs a workspace; `init` creates one. Forcing it through
+`Application` would mean making the facade tolerate a nonexistent workspace,
+weakening the guarantees every other command relies on.
+
+Templates are string constants in a TypeScript module rather than files on
+disk, so packaging stays trivial — no build step that copies a directory, no
+runtime path resolution that breaks under `npm link`. The scaffolded content is
+a plausible complete resume with four variants, because the fastest way to
+learn the schema is to read one filled in.
+
+### 2026-07-22 · The built-in sample content is gone
+
+Earlier layers fell back to sample content when no workspace resolved, because
+there was no way to create one. Now there is: a missing workspace is a
+diagnostic naming every path searched and suggesting `vitae init`. Keeping the
+fallback would mean a typo in `--dir` silently builds someone else's resume.
+
+### 2026-07-22 · One error boundary, and `bin` is separate from the command tree
+
+`withErrorBoundary` turns anything unexpected into one line plus an error code,
+with stacks only under `--verbose`, and treats `EPIPE` as success so piping
+into `head` is quiet. `main.ts` exports `runCli` and `bin.ts` is the
+executable, which is what lets the onboarding test drive the real CLI
+in-process — the whole day-one path runs in ~150ms instead of spawning
+subprocesses.
+
+Commander is configured with `exitOverride`, or it would call `process.exit`
+itself and take the decision away from the exit-code policy.
+
+---
+
 ## 2026-07-22 — Layer 4: Application Services
 
 ### 2026-07-22 · The application layer never prints and never exits
