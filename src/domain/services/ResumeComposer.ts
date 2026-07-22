@@ -71,8 +71,9 @@ export class ResumeComposer {
     library: ContentLibrary,
   ): Result<ResumeDocument, DomainError[]> {
     const projects = this.resolveProjects(variant, library);
-    if (!projects.ok) {
-      return err(projects.error);
+    const jobs = this.resolveJobs(variant, library);
+    if (!projects.ok || !jobs.ok) {
+      return err([...(projects.ok ? [] : projects.error), ...(jobs.ok ? [] : jobs.error)]);
     }
 
     const summarySection: Section[] =
@@ -93,7 +94,7 @@ export class ResumeComposer {
         blocks: composeEducationBlocks(library.education, variant),
       },
       { heading: SECTION_HEADINGS.skills, blocks: composeSkillBlocks(variant.skills) },
-      { heading: SECTION_HEADINGS.work, blocks: library.jobs.flatMap(composeJobBlocks) },
+      { heading: SECTION_HEADINGS.work, blocks: jobs.value.flatMap(composeJobBlocks) },
       { heading: SECTION_HEADINGS.projects, blocks: projects.value.flatMap(composeProjectBlocks) },
       {
         heading: SECTION_HEADINGS.leadership,
@@ -130,6 +131,36 @@ export class ResumeComposer {
     }
 
     return errors.length > 0 ? err(errors) : ok(projects);
+  }
+
+  /**
+   * Resolves which jobs to show, and in what order.
+   *
+   * `jobIds` absent means "every job, in `work.ts` order" — the tool's
+   * behavior before per-variant selection existed, so no variant that never
+   * set `jobIds` changes what it renders.
+   *
+   * @param variant - the variant whose `jobIds` to resolve, if any
+   * @param library - source of jobs
+   */
+  private resolveJobs(variant: Variant, library: ContentLibrary): Result<Job[], DomainError[]> {
+    if (variant.jobIds === undefined) {
+      return ok([...library.jobs]);
+    }
+
+    const jobs: Job[] = [];
+    const errors: DomainError[] = [];
+
+    for (const jobId of variant.jobIds) {
+      const job = library.getJob(jobId);
+      if (job.ok) {
+        jobs.push(job.value);
+      } else {
+        errors.push(job.error);
+      }
+    }
+
+    return errors.length > 0 ? err(errors) : ok(jobs);
   }
 }
 
