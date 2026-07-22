@@ -17,6 +17,13 @@ export const INFRA_ERROR_CODES = {
   missingContentFile: 'MISSING_CONTENT_FILE',
   variantIdMismatch: 'VARIANT_ID_MISMATCH',
   configInvalid: 'CONFIG_INVALID',
+  processFailed: 'PROCESS_FAILED',
+  processTimeout: 'PROCESS_TIMEOUT',
+  processNotFound: 'PROCESS_NOT_FOUND',
+  git: 'GIT_FAILED',
+  capabilityUnavailable: 'CAPABILITY_UNAVAILABLE',
+  pdfConversion: 'PDF_CONVERSION_FAILED',
+  pdfRead: 'PDF_READ_FAILED',
 } as const;
 
 /** The `code` of any concrete loading error. */
@@ -99,6 +106,85 @@ export class VariantIdMismatchError extends DomainError {
       `${filePath}: variant declares id "${declaredId}" but the filename says ` +
         `"${fileNameId}". Rename the file or change the id so they agree.`,
     );
+  }
+}
+
+/**
+ * A subprocess failed, timed out, or was not installed.
+ *
+ * One class with three codes rather than three classes: callers branch on the
+ * code, and the distinction that matters to a user — "it broke" versus "it is
+ * not installed" — is carried by the code, not the type.
+ */
+export class ProcessError extends DomainError {
+  public override readonly code:
+    | typeof INFRA_ERROR_CODES.processFailed
+    | typeof INFRA_ERROR_CODES.processTimeout
+    | typeof INFRA_ERROR_CODES.processNotFound;
+
+  /**
+   * @param command - the binary that was run
+   * @param code - which kind of failure
+   * @param detail - stderr, or a description of the timeout
+   */
+  public constructor(
+    public readonly command: string,
+    code: ProcessError['code'],
+    detail: string,
+  ) {
+    super(`${command}: ${detail}`);
+    this.code = code;
+  }
+}
+
+/** A git operation failed. */
+export class GitError extends DomainError {
+  public override readonly code = INFRA_ERROR_CODES.git;
+
+  public constructor(detail: string) {
+    super(`git: ${detail}`);
+  }
+}
+
+/**
+ * A feature was asked for that this machine cannot provide.
+ *
+ * Always names the install step: "soffice not found" tells a user nothing they
+ * can act on, and this tool must stay usable by someone who just wants to
+ * build a resume.
+ */
+export class CapabilityUnavailableError extends DomainError {
+  public override readonly code = INFRA_ERROR_CODES.capabilityUnavailable;
+
+  /**
+   * @param capability - what was missing, e.g. `libreoffice`
+   * @param needed - the feature that required it
+   * @param remedy - how to install it
+   */
+  public constructor(
+    public readonly capability: string,
+    needed: string,
+    remedy: string,
+  ) {
+    super(`${needed} requires ${capability}, which was not found. ${remedy}`);
+  }
+}
+
+/** LibreOffice ran but produced no usable PDF. */
+export class PdfConversionError extends DomainError {
+  public override readonly code = INFRA_ERROR_CODES.pdfConversion;
+
+  public constructor(detail: string) {
+    super(`PDF conversion failed: ${detail}`);
+  }
+}
+
+/** A PDF buffer could not be parsed. */
+export class PdfReadError extends DomainError {
+  public override readonly code = INFRA_ERROR_CODES.pdfRead;
+
+  public constructor(detail: string) {
+    super(`Could not read PDF: ${detail}`);
   }
 }
 
