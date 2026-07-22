@@ -7,6 +7,111 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Layer 4 — Application Services
+
+`vitae build` now exists: it resolves the workspace, loads content, composes,
+validates, renders, and writes to `dist/`. Unlike the read-only commands it
+requires a real `.vitae/` folder — there is nowhere sensible to write artifacts
+for content compiled into the tool.
+
+**Setup:** `npm run build`, then `cd tests/fixtures/workspace`.
+
+### Flow 4.A — Build every variant
+
+```bash
+vitae build --all
+```
+
+Expect one line per variant, each with its path and byte count:
+
+```
+✓ data-engineer  …/.vitae/dist/resume_data_engineer.docx (9641 bytes)
+    warning [CLAIM_NEEDS_REVIEW]: Claim "etl" (etl) needs review before this variant is sent.
+✓ software-engineer  …/.vitae/dist/resume_software_engineer.docx (9595 bytes)
+```
+
+Then `file .vitae/dist/*.docx` — expect `Microsoft Word 2007+` for both, and
+open one. Note that the `needs-review` warning **did not block the build**:
+you must be able to build a resume for a project you have not reviewed yet, you
+just need to be told.
+
+### Flow 4.B — The honesty gate blocks a build, and nothing is written
+
+Edit `.vitae/content/claims.ts` and change `etl`'s `defensibility` to
+`'cannot-defend'`, then:
+
+```bash
+rm -rf .vitae/dist && vitae build data-engineer; echo "exit=$?"; ls .vitae/dist
+```
+
+Expect:
+
+```
+✗ data-engineer  blocked
+    error [CLAIM_CANNOT_DEFEND]: Claim "etl" (etl) cannot be defended and must not ship on this variant.
+
+1 variant(s) blocked by undefendable claims. Fix the claim, or rebuild with --force if you have decided otherwise.
+exit=1
+```
+
+and `dist/` **not created at all** — nothing was written. `blocked` is
+deliberately a different status from `failed`: the build worked perfectly,
+policy refused to ship it.
+
+### Flow 4.C — `--force` overrides the gate without hiding it
+
+```bash
+vitae build data-engineer --force; echo "exit=$?"
+```
+
+Expect `✓ … (9644 bytes)` and exit 0 — **with the error diagnostic still
+printed**. Forcing silences the gate, not the warning. Revert the claim when
+you are done.
+
+### Flow 4.D — Formats and output directories
+
+```bash
+vitae build software-engineer --format txt
+vitae build software-engineer --out /tmp/vitae-out
+vitae build software-engineer --format pdf; echo "exit=$?"
+```
+
+Expect a `.txt` artifact, then one written to `/tmp/vitae-out`, then
+`unknown format "pdf". Known formats: docx, txt.` with exit 2 — a typed error
+rather than a throw, because a format name is user input.
+
+### Flow 4.E — One broken variant does not hide the others
+
+Break one variant only — point `.vitae/variants/software-engineer.ts` at a
+project ID that does not exist — then:
+
+```bash
+vitae build --all; echo "exit=$?"
+```
+
+Expect the good variant to still report `✓ written` and the broken one
+`! failed` with its diagnostic, and exit 1. A run that stopped at the first
+error would make you fix and rerun once per variant to learn what one run could
+have told you.
+
+### Flow 4.F — The layer's own rules are enforced, not agreed
+
+```bash
+npx vitest run tests/app/
+```
+
+Expect 30 passed, all against in-memory fakes — no disk, no jiti, no docx
+adapter. Then prove the purity rule:
+
+```bash
+printf "export function bad(): void { console.log('x'); process.exit(1); }\n" > src/app/probe.ts && npx eslint src/app/probe.ts; rm src/app/probe.ts
+```
+
+Expect errors for both `no-console` and `process.exit`. The application layer
+returns reports; only the CLI prints and exits.
+
+---
+
 ## Layer 3 — Theme & Rendering
 
 The tool can now turn a composed document into a real `.docx` and into plain
