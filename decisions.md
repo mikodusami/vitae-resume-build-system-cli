@@ -514,3 +514,20 @@ than editing this command's logic.
 Outer layers import from the barrel only. Layer 2's loader needs the model
 types and error classes exported from one place, so the barrel exists from the
 start rather than being retrofitted.
+
+### 2026-07-22 · Archive filenames carry an optional human label
+
+`--archive` stamps filenames with a git commit hash so `git show <hash>`
+reconstructs exactly what was built. In practice nobody recalls a hash two
+weeks after applying — they recall the company name. `--label <text>` inserts
+a slugified segment between the variant id and the hash
+(`2026-07-22_data-engineer_techcorp_a1b2c3d.docx`), reusing the same slugify
+helper `DefaultNaming` already used for variant ids rather than duplicating
+sanitization logic.
+
+The label is rejected alongside `--all` at the CLI layer: one label cannot
+name every variant a workspace builds, and a silent per-variant reinterpretation
+would be worse than an error. `ArchiveNaming`'s constructor takes the label as
+an optional third parameter and the `archiveNaming` factory type gained a
+second argument; both changes are additive, so `DefaultNaming` and every
+existing call site needed no change.
