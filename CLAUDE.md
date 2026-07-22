@@ -11,8 +11,12 @@ npm run typecheck   # tsc --noEmit, strict + noUncheckedIndexedAccess
 npm run lint        # ESLint, including the layer-boundary rules
 npm test            # vitest run
 npm run build       # emit src/ to dist/
+npm run link        # build, then npm link the `vitae` binary (unlink to remove)
 npx vite-node examples/composeDemo.ts   # exercise the domain by hand
 ```
+
+The linked binary runs `dist/cli/main.js`, so **re-run `npm run build` after
+changing `src/` or the global `vitae` keeps running the old code.**
 
 Run a single test by name with `npx vitest run -t "<name>"`.
 
@@ -38,6 +42,20 @@ Layer 1 (built) is `src/domain/`:
   stable `code` values the CLI formats and tests assert on.
 
 `src/domain/index.ts` is the only entry point outer layers should import from.
+
+`src/cli/` is a thin shell shipped ahead of its layer: `main.ts` dispatches
+argv, and `commands/` holds `demo`, `list`, `check`, and `prep` — everything
+the domain can answer without I/O. Two rules keep it honest:
+
+- Content comes from `src/cli/sampleContent.ts` until Layer 2's loader exists,
+  and `--help` says so. Do not add a command that reads the filesystem here;
+  that belongs to `infra/` behind the `ContentRepository` port.
+- Commands in `PLANNED_COMMANDS` (`init`, `build`, `where`, `diff`) exit 2 with
+  the layer that will implement them. Move one out of that map only when it
+  genuinely works.
+
+Exit codes: 0 success, 1 failure (unknown ID, error-severity diagnostic),
+2 usage (unknown or unimplemented command).
 
 Two invariants worth restating before changing anything here: the domain must
 not import `fs` or `docx`, and `ResumeDocument` must stay presentation-free. If
