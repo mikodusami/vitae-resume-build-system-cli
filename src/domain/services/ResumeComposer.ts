@@ -198,28 +198,27 @@ function classifyContactHref(value: string): string | undefined {
 }
 
 /**
- * Institution/location, then degree/date, then GPA and coursework.
+ * Institution/location, then degree/date (with GPA folded onto the degree),
+ * then coursework.
  *
  * Institution and degree sit on separate lines — each paired with its own
  * right-aligned counterpart — rather than sharing one line the way the
  * original layout did, because location and graduation date are different
  * kinds of fact and neither reads well pushed to the far end of the other's
- * line.
+ * line. GPA reads as part of the degree itself ("B.S. Computer Science, Major
+ * GPA: 3.32"), so it is appended to that line rather than given one of its
+ * own.
  */
 function composeEducationBlocks(education: Education, variant: Variant): Block[] {
+  const degree: TextRun[] = [run(education.degree, 'body')];
+  if (education.gpa !== undefined) {
+    degree.push(run(`, ${education.gpa.label}: ${education.gpa.value}`, 'body'));
+  }
+
   const blocks: Block[] = [
     splitLine([run(education.institution, 'body', ['bold'])], [run(education.location, 'meta')]),
-    splitLine([run(education.degree, 'body')], [run(education.date, 'meta')]),
+    splitLine(degree, [run(education.date, 'meta')]),
   ];
-
-  if (education.gpa !== undefined) {
-    blocks.push(
-      paragraph([
-        run(`${education.gpa.label}: `, 'meta', ['bold']),
-        run(education.gpa.value, 'meta'),
-      ]),
-    );
-  }
 
   const coursework = variant.coursework.length > 0 ? variant.coursework : education.coursework;
   if (coursework.length > 0) {
