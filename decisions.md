@@ -628,3 +628,19 @@ layout puts it on the **same line** as the degree, comma-separated:
 additional run on the degree line's left side, inside the same `splitLine` as
 before, rather than pushing a separate paragraph block. `Education.gpa` and
 its schema are unchanged — only where the composer places the text moved.
+
+### 2026-07-22 · Variant summary becomes optional
+
+Reported as a bug: renaming a variant file (`data-engineering.ts`, not one of
+the four scaffolded names) hit `SCHEMA_VALIDATION_FAILED: summary — expected
+string, received undefined`, because `summary` was required from Layer 1
+onward. Making it optional was the actual fix — some variants legitimately
+have no summary worth writing, and the field author who deletes an unwanted
+line should not be punished with a schema error for doing so.
+
+`Variant.summary` is now `string | undefined`, absent entirely rather than an
+empty string, matching the `Claim.reviewNotes` / `Education.gpa` precedent.
+`ResumeComposer.compose` builds the Summary section conditionally — a section
+array spread in ahead of the fixed ones — rather than emitting a heading with
+an empty paragraph under it; `composeMeta`'s docx `description` falls back to
+`''` when there is no summary to use.
