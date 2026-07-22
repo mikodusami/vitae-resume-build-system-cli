@@ -15,15 +15,18 @@ content model, the composition engine, the claims policy, and the
 rendering-agnostic document IR. No filesystem, no docx, no CLI yet — those are
 later layers, and the domain is deliberately unable to reach them.
 
-A thin CLI shell ships alongside it so the tool is runnable today — it exposes
-only the commands the domain can answer on its own, against sample content.
+**Layer 2 (Workspace & Content Loading) — built.** The tool now finds your
+`.vitae/` folder, loads your TypeScript content at runtime, validates it at the
+boundary, and hands the domain a `ContentLibrary` — or a list of diagnostics
+naming every file and field that is wrong.
 
-| Layer                       | State                                |
-| --------------------------- | ------------------------------------ |
-| 1 — Domain core             | ✅ built                             |
-| CLI shell                   | ✅ runnable (`demo/list/check/prep`) |
-| 2 — Content loading         | not started                          |
-| 3+ — Rendering / full CLI   | not started                          |
+| Layer                     | State                                         |
+| ------------------------- | --------------------------------------------- |
+| 1 — Domain core           | ✅ built                                      |
+| 2 — Workspace & loading   | ✅ built                                      |
+| CLI shell                 | ✅ runnable (`where/list/demo/check/prep`)    |
+| 3 — Rendering (docx)      | not started                                   |
+| 4+ — Archive, init, diff  | not started                                   |
 
 ## Getting started
 
@@ -43,17 +46,28 @@ any directory. `npm run unlink` removes it.
 
 ```bash
 vitae --help          # what exists now, and what is still planned
+vitae where           # which .vitae/ folder resolved, and its paths
 vitae list            # variants, projects, defensibility status
 vitae demo            # compose a variant and print its document outline
 vitae check           # claims gate; exits 1 if a claim cannot be defended
 vitae prep            # interview checklist from that variant's review notes
 ```
 
-Content currently comes from a built-in sample
-([src/cli/sampleContent.ts](src/cli/sampleContent.ts)) — reading your own
-`.vitae/` folder arrives with Layer 2, and `init`, `build`, `where`, and `diff`
-exit 2 with a message naming the layer that will deliver them rather than
-pretending to work.
+Content is read from the nearest `.vitae/` folder, searching up from the
+current directory the way `git` finds `.git/`, then falling back to `~/.vitae`.
+`--dir <path>` or `VITAE_DIR` overrides discovery. With no workspace anywhere,
+commands fall back to built-in sample content and say so — but a workspace that
+*exists and fails to load* is a hard error, never a silent fallback.
+
+`tests/fixtures/workspace/` is a complete, valid workspace you can try it
+against:
+
+```bash
+vitae list --dir tests/fixtures/workspace/.vitae
+```
+
+`init`, `build`, and `diff` exit 2 with a message naming the layer that will
+deliver them rather than pretending to work.
 
 There is also a runnable script covering the same ground without installing:
 
@@ -77,10 +91,15 @@ src/
 │   ├── errors/      DomainError hierarchy with stable codes
 │   └── primitives/  Result<T, E>
 ├── app/        # (later) orchestration: decides what blocks a build
-├── infra/      # (later) filesystem loading, docx rendering
+├── infra/      # the anti-corruption layer: nothing untrusted reaches domain/
+│   ├── workspace/   Workspace — every "where does X live" answer
+│   ├── loader/      ModuleLoader port, jiti adapter, in-memory fake
+│   ├── schema/      zod schemas bound to domain types + diagnostic mapper
+│   ├── config/      config.json, with defaults and forward compatibility
+│   └── content/     FileContentRepository — the ContentRepository port
 └── cli/        # command dispatch + built-in sample content
     ├── main.ts       argv dispatch, exit codes, usage
-    └── commands/     demo, list, check, prep
+    └── commands/     where, demo, list, check, prep
 ```
 
 Four load-bearing ideas, recorded in [decisions.md](decisions.md):
@@ -95,6 +114,10 @@ Four load-bearing ideas, recorded in [decisions.md](decisions.md):
   writing a file.
 - **The dependency rule is enforced by ESLint**, not by discipline — `domain/`
   cannot import `fs`, `docx`, or a sibling layer without failing `npm run lint`.
+- **Schemas are bound to domain types, not inferred from them.** Every zod
+  schema is annotated `z.ZodType<DomainType>`, so adding a field to the domain
+  and forgetting the schema breaks the build instead of confusing a user at
+  runtime. The domain leads; the boundary follows.
 
 ## Scripts
 
