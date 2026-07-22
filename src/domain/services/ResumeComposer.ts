@@ -198,9 +198,24 @@ function composeProjectBlocks(project: Project): Block[] {
   }
 
   return [
-    splitLine(left, [run(project.link, 'link')]),
+    splitLine(left, [run(project.link, 'link', undefined, toHref(project.link))]),
     ...project.bullets.map((text) => bullet([run(text, 'body')])),
   ];
+}
+
+/**
+ * Normalizes a project link into a URL a hyperlink can target.
+ *
+ * Content authors write the human-readable form (`github.com/user/repo`),
+ * not a full URL — a scheme-less string is not something Word, or any
+ * renderer, can open. `undefined` for an empty link means "no run to link,"
+ * distinct from a link that is present but somehow unopenable.
+ */
+function toHref(link: string): string | undefined {
+  if (link.length === 0) {
+    return undefined;
+  }
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(link) ? link : `https://${link}`;
 }
 
 /** The single awards line: bold label followed by comma-joined entries. */
