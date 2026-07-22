@@ -19,6 +19,7 @@ import { runCheck } from './commands/check.js';
 import { runDemo } from './commands/demo.js';
 import { runList } from './commands/list.js';
 import { runPrep } from './commands/prep.js';
+import { runText } from './commands/text.js';
 import { runWhere } from './commands/where.js';
 import { resolveContent } from './contentSource.js';
 
@@ -44,6 +45,7 @@ commands:
   where             print which .vitae/ folder resolved, and its paths
   list              variants, their projects, and defensibility status
   demo [variant]    compose a variant and print its document outline
+  text [variant]    render a variant as plain text (ATS-safe) to stdout
   check [variant]   validate claims; exits 1 if a claim cannot be defended
   prep [variant]    interview checklist from that variant's review notes
 
@@ -52,6 +54,7 @@ planned:
 
 options:
   --dir <path>      use this workspace instead of discovering one
+  --width <n>       line width for \`text\` (default 80)
   --help, -h        show this message
   --version, -v     print the version
 
@@ -64,6 +67,7 @@ interface ParsedArgs {
   readonly command: string;
   readonly positional: string | undefined;
   readonly dir: string | undefined;
+  readonly width: number | undefined;
 }
 
 /**
@@ -78,6 +82,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let command = '--help';
   let positional: string | undefined;
   let dir: string | undefined;
+  let width: number | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] as string;
@@ -91,6 +96,15 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       dir = argument.slice('--dir='.length);
       continue;
     }
+    if (argument === '--width') {
+      width = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith('--width=')) {
+      width = Number(argument.slice('--width='.length));
+      continue;
+    }
     if (index === 0) {
       command = argument;
       continue;
@@ -98,7 +112,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     positional ??= argument;
   }
 
-  return { command, positional, dir };
+  return {
+    command,
+    positional,
+    dir,
+    width: width !== undefined && Number.isFinite(width) && width > 0 ? width : undefined,
+  };
 }
 
 /**
@@ -128,7 +147,7 @@ function readVersion(): string {
  * @returns the process exit code
  */
 async function main(argv: readonly string[]): Promise<number> {
-  const { command, positional, dir } = parseArgs(argv);
+  const { command, positional, dir, width } = parseArgs(argv);
 
   if (command === '--help' || command === '-h' || command === 'help') {
     console.log(USAGE);
@@ -150,7 +169,7 @@ async function main(argv: readonly string[]): Promise<number> {
     return runWhere({ explicitDir: dir });
   }
 
-  if (!['demo', 'list', 'check', 'prep'].includes(command)) {
+  if (!['demo', 'list', 'check', 'prep', 'text'].includes(command)) {
     console.error(`unknown command: ${command}\n`);
     console.error(USAGE);
     return EXIT.usage;
@@ -181,6 +200,8 @@ async function main(argv: readonly string[]): Promise<number> {
   switch (command) {
     case 'demo':
       return runDemo(library, variantId);
+    case 'text':
+      return runText(library, variantId, width);
     case 'list':
       return runList(library);
     case 'check':
