@@ -531,3 +531,40 @@ would be worse than an error. `ArchiveNaming`'s constructor takes the label as
 an optional third parameter and the `archiveNaming` factory type gained a
 second argument; both changes are additive, so `DefaultNaming` and every
 existing call site needed no change.
+
+### 2026-07-22 · Project links become real hyperlink fields, not styled text
+
+Reported symptom: links in a built resume were sized and coloured correctly
+but not clickable in any viewer. The `link` text role only ever produced a
+plain, styled `TextRun` — the visual appearance of a hyperlink with no field
+behind it, which is not a link to anyone but a human reading it on screen.
+
+`TextRun` in the document IR gained an optional `href`. This is deliberately
+content, not presentation: a URL cannot be invented from the `link` role
+alone, and the render layer must not guess at it, so it travels with the run
+from composition. `ResumeComposer` normalizes `Project.link` into an href via
+`toHref`, adding `https://` to a scheme-less address (content authors write
+`github.com/user/repo`, not a full URL) and leaving an address with an
+existing scheme untouched. An empty link produces no `href` and therefore no
+hyperlink, rather than a link to nowhere.
+
+The renderer side needed a shared `toParagraphChild` helper (new
+`src/render/docx/blocks/textRuns.ts`) used by all three block renderers,
+because a run with an `href` must become a real docx `ExternalHyperlink`
+rather than a `TextRun`, and that translation was duplicated across
+`paragraph.ts`, `bullet.ts`, and `splitLine.ts`. `StyleResolver` gained
+`hyperlinkRunOptions`, since docx does not apply blue-and-underlined styling
+to a hyperlink field automatically — that appearance is explicit run
+formatting, set once rather than left to an undefined "Hyperlink" character
+style.
+
+One cost surfaced immediately: docx assigns each hyperlink a random
+relationship id (`nanoid()`, internal, unseedable) on every render, which
+broke the `word/document.xml` determinism test. The id is plumbing, not
+content — the same category as the zip entry timestamps already excluded from
+the determinism claim — so the test now normalizes relationship ids before
+comparing rather than treating them as a genuine difference.
+
+`PlainTextRenderer` needed no change: it already reads only `run.text`, which
+is exactly the kind of thing the presentation-free IR is supposed to
+guarantee.
