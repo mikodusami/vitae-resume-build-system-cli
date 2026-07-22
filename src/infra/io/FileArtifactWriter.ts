@@ -7,7 +7,7 @@
  * one — never a truncated `.docx` that Word refuses to open.
  */
 
-import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { err, ok, type Result } from '../../domain/index.js';
@@ -29,6 +29,15 @@ export class FileArtifactWriter implements ArtifactWriter {
       return ok(undefined);
     } catch (thrown) {
       return err(new IoError(absPath, describeThrown(thrown)));
+    }
+  }
+
+  public async exists(absPath: string): Promise<boolean> {
+    try {
+      await access(absPath);
+      return true;
+    } catch {
+      return false;
     }
   }
 

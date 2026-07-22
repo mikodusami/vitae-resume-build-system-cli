@@ -27,6 +27,13 @@ export interface VitaeConfig {
   /** Variant used when a command is given none. */
   readonly defaultVariant?: string | undefined;
   readonly output?: OutputConfig | undefined;
+  /**
+   * Maximum pages before `vitae check --pages` complains.
+   *
+   * One by default: a resume that runs to two pages is usually a resume that
+   * has not been edited. Raise it deliberately.
+   */
+  readonly pageLimit?: number | undefined;
 }
 
 /** Config plus any non-fatal complaints raised while reading it. */
@@ -51,10 +58,11 @@ const configSchema: z.ZodType<VitaeConfig> = z.object({
       filenamePrefix: z.string().min(1).optional(),
     })
     .optional(),
+  pageLimit: z.number().int().positive().optional(),
 });
 
 /** Keys the current version understands; anything else warns. */
-const KNOWN_KEYS: readonly string[] = ['owner', 'defaultVariant', 'output'];
+const KNOWN_KEYS: readonly string[] = ['owner', 'defaultVariant', 'output', 'pageLimit'];
 
 /**
  * Reads and validates `config.json`.
