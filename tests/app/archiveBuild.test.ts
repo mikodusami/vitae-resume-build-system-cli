@@ -81,7 +81,7 @@ function makeUseCase(
     stamper,
     archiveDir: '/ws/.vitae/archive',
     workspaceRoot: '/ws/.vitae',
-    archiveNaming: (stamp) => new ArchiveNaming(stamp, new Date(2026, 6, 22)),
+    archiveNaming: (stamp, label) => new ArchiveNaming(stamp, new Date(2026, 6, 22), label),
     ...(pdfConverter === undefined ? {} : { pdfConverter }),
   });
 }
@@ -184,6 +184,24 @@ describe('build --archive', () => {
     expect(report.status).toBe('written');
     expect(report.archivePath).toBeUndefined();
     expect(report.diagnostics.some((d) => d.code === 'ARCHIVE_STAMP_FAILED')).toBe(true);
+  });
+
+  it('carries a label into the archive filename', async () => {
+    const writer = new FakeArtifactWriter();
+    const stamper = new FakeStamper(ok({ hash: 'a1b2c3d', dirty: false }));
+
+    const report = await makeUseCase(writer, stamper).execute(library(), '/ws/.vitae/dist', {
+      variantId: 'data-engineer',
+      format: 'docx',
+      archive: true,
+      archiveLabel: 'TechCorp',
+    });
+
+    // Two weeks later, "TechCorp" is what gets recalled — the hash is what
+    // `git show` needs, not what a person searches the folder by.
+    expect(report.archivePath).toBe(
+      '/ws/.vitae/archive/2026-07-22_data-engineer_techcorp_a1b2c3d.docx',
+    );
   });
 
   it('does not archive unless asked', async () => {

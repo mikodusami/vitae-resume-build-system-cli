@@ -37,6 +37,12 @@ export interface BuildVariantInput {
    * is why this is a field rather than a parallel use case.
    */
   readonly archive?: boolean | undefined;
+  /**
+   * Who this archived copy is for, e.g. a company name — carried into the
+   * archive filename so it can be found later by memory, not just by hash.
+   * Ignored unless `archive` is also set.
+   */
+  readonly archiveLabel?: string | undefined;
   /** Also convert the result to PDF beside the document. */
   readonly pdf?: boolean | undefined;
 }
@@ -63,8 +69,8 @@ export interface BuildVariantDependencies {
   readonly workspaceRoot?: string | undefined;
   /** Provenance for `--archive`; absent means archiving is unavailable. */
   readonly stamper?: ContentStamper | undefined;
-  /** Names archived copies, given a stamp. Injected for testable dates. */
-  readonly archiveNaming?: ((stamp: BuildStamp) => NamingStrategy) | undefined;
+  /** Names archived copies, given a stamp and an optional label. */
+  readonly archiveNaming?: ((stamp: BuildStamp, label?: string) => NamingStrategy) | undefined;
   /** Converts to PDF for `--pdf`; absent means the feature is unavailable. */
   readonly pdfConverter?: PdfConverter | undefined;
 }
@@ -207,7 +213,7 @@ export class BuildVariantUseCase {
       );
     }
 
-    const naming = this.deps.archiveNaming(stamped.value);
+    const naming = this.deps.archiveNaming(stamped.value, input.archiveLabel);
     const filename = naming.filenameFor(variant, input.format);
     const archivePath = this.deps.joinPath(this.deps.archiveDir, filename);
 
