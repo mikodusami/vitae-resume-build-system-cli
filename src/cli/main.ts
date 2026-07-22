@@ -15,12 +15,15 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { RendererFactory, type OutputFormat } from '../app/index.js';
+import { runBuild } from './commands/build.js';
 import { runCheck } from './commands/check.js';
 import { runDemo } from './commands/demo.js';
 import { runList } from './commands/list.js';
 import { runPrep } from './commands/prep.js';
 import { runText } from './commands/text.js';
 import { runWhere } from './commands/where.js';
+import { wireApplication } from './compositionRoot.js';
 import { resolveContent } from './contentSource.js';
 
 /** Exit codes; `usage` is separated from `failure` so scripts can tell them apart. */
@@ -33,7 +36,6 @@ const EXIT = {
 /** Commands the design calls for that a later layer will implement. */
 const PLANNED_COMMANDS: Readonly<Record<string, string>> = {
   init: 'scaffold a .vitae/ folder — arrives with the templates layer',
-  build: 'write a .docx — arrives with the rendering layer',
   diff: 'show content changes since a git ref — arrives with the archive layer',
 };
 
@@ -43,6 +45,8 @@ usage: vitae <command> [variant] [--dir <path>]
 
 commands:
   where             print which .vitae/ folder resolved, and its paths
+  build <variant>   render and write to dist/ (needs a real .vitae/ folder)
+  build --all       build every variant, continuing past failures
   list              variants, their projects, and defensibility status
   demo [variant]    compose a variant and print its document outline
   text [variant]    render a variant as plain text (ATS-safe) to stdout
@@ -50,10 +54,14 @@ commands:
   prep [variant]    interview checklist from that variant's review notes
 
 planned:
-  init, build, diff — see layers.md
+  init, diff — see layers.md
 
 options:
   --dir <path>      use this workspace instead of discovering one
+  --format <fmt>    docx (default) or txt, for \`build\`
+  --out <path>      write builds here instead of the workspace's dist/
+  --force           build even when a claim cannot be defended
+  --all             build every variant
   --width <n>       line width for \`text\` (default 80)
   --help, -h        show this message
   --version, -v     print the version
@@ -68,7 +76,22 @@ interface ParsedArgs {
   readonly positional: string | undefined;
   readonly dir: string | undefined;
   readonly width: number | undefined;
+  readonly format: string | undefined;
+  readonly outputDir: string | undefined;
+  readonly force: boolean;
+  readonly all: boolean;
 }
+
+/** Flags taking a value, mapped to the parsed field they populate. */
+const VALUE_FLAGS = {
+  '--dir': 'dir',
+  '--width': 'width',
+  '--format': 'format',
+  '--out': 'outputDir',
+} as const;
+
+/** A flag that takes a value. */
+type ValueFlag = keyof typeof VALUE_FLAGS;
 
 /**
  * Parses argv without a dependency.
@@ -81,28 +104,33 @@ interface ParsedArgs {
 function parseArgs(argv: readonly string[]): ParsedArgs {
   let command = '--help';
   let positional: string | undefined;
-  let dir: string | undefined;
-  let width: number | undefined;
+  let force = false;
+  let all = false;
+  const values: Partial<Record<(typeof VALUE_FLAGS)[ValueFlag], string | undefined>> = {};
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index] as string;
 
-    if (argument === '--dir') {
-      dir = argv[index + 1];
-      index += 1;
+    const equalsIndex = argument.indexOf('=');
+    const flagName = equalsIndex === -1 ? argument : argument.slice(0, equalsIndex);
+
+    if (flagName in VALUE_FLAGS) {
+      const field = VALUE_FLAGS[flagName as ValueFlag];
+      if (equalsIndex === -1) {
+        values[field] = argv[index + 1];
+        index += 1;
+      } else {
+        values[field] = argument.slice(equalsIndex + 1);
+      }
       continue;
     }
-    if (argument.startsWith('--dir=')) {
-      dir = argument.slice('--dir='.length);
+
+    if (argument === '--force') {
+      force = true;
       continue;
     }
-    if (argument === '--width') {
-      width = Number(argv[index + 1]);
-      index += 1;
-      continue;
-    }
-    if (argument.startsWith('--width=')) {
-      width = Number(argument.slice('--width='.length));
+    if (argument === '--all') {
+      all = true;
       continue;
     }
     if (index === 0) {
@@ -112,11 +140,17 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     positional ??= argument;
   }
 
+  const width = values.width === undefined ? Number.NaN : Number(values.width);
+
   return {
     command,
     positional,
-    dir,
-    width: width !== undefined && Number.isFinite(width) && width > 0 ? width : undefined,
+    dir: values.dir,
+    width: Number.isFinite(width) && width > 0 ? width : undefined,
+    format: values.format,
+    outputDir: values.outputDir,
+    force,
+    all,
   };
 }
 
@@ -141,13 +175,52 @@ function readVersion(): string {
 }
 
 /**
+ * Wires the application and runs a build.
+ *
+ * Building requires a real workspace: unlike the read-only commands, there is
+ * nowhere sensible to write artifacts for content compiled into the tool.
+ *
+ * @param args - the parsed command line
+ * @returns the process exit code
+ */
+async function buildCommand(args: ParsedArgs): Promise<number> {
+  const format = args.format ?? 'docx';
+  if (!RendererFactory.isSupported(format)) {
+    console.error(`error: unknown format "${format}". Known formats: docx, txt.`);
+    return EXIT.usage;
+  }
+
+  const wired = await wireApplication({ explicitDir: args.dir });
+  if (!wired.ok) {
+    for (const diagnostic of wired.diagnostics) {
+      console.error(`error [${diagnostic.code}]: ${diagnostic.message}`);
+    }
+    return EXIT.failure;
+  }
+
+  for (const warning of wired.wired.warnings) {
+    console.error(`warning: ${warning}`);
+  }
+  console.error(`workspace: ${wired.wired.workspaceRoot}\n`);
+
+  return runBuild(wired.wired, {
+    variantId: args.positional,
+    all: args.all,
+    format: format satisfies OutputFormat,
+    force: args.force,
+    outputDir: args.outputDir,
+  });
+}
+
+/**
  * Dispatches one invocation.
  *
  * @param argv - arguments after the node executable and script path
  * @returns the process exit code
  */
 async function main(argv: readonly string[]): Promise<number> {
-  const { command, positional, dir, width } = parseArgs(argv);
+  const args = parseArgs(argv);
+  const { command, positional, dir, width } = args;
 
   if (command === '--help' || command === '-h' || command === 'help') {
     console.log(USAGE);
@@ -167,6 +240,10 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (command === 'where') {
     return runWhere({ explicitDir: dir });
+  }
+
+  if (command === 'build') {
+    return buildCommand(args);
   }
 
   if (!['demo', 'list', 'check', 'prep', 'text'].includes(command)) {
