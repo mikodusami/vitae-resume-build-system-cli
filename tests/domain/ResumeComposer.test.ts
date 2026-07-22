@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DOMAIN_ERROR_CODES } from '../../src/domain/errors/domainError.js';
 import { ResumeComposer, SECTION_HEADINGS } from '../../src/domain/services/ResumeComposer.js';
 import type { ResumeDocument } from '../../src/domain/document/resumeDocument.js';
-import { makeLibrary, makeVariant } from './fixtures.js';
+import { makeLibrary, makeProject, makeVariant } from './fixtures.js';
 
 /** Composes, failing the test loudly if composition was expected to succeed. */
 function composeOrThrow(variantOverrides = {}): ResumeDocument {
@@ -50,6 +50,45 @@ describe('ResumeComposer', () => {
     expect(firstBlock?.kind).toBe('splitLine');
     if (firstBlock?.kind !== 'splitLine') return;
     expect(firstBlock.left[0]?.text).toBe('Project ranker');
+  });
+
+  it('adds an https scheme to a scheme-less project link', () => {
+    const doc = composeOrThrow({ projectIds: ['etl'] });
+
+    const projects = doc.sections.find((s) => s.heading === SECTION_HEADINGS.projects);
+    const firstBlock = projects?.blocks[0];
+    expect(firstBlock?.kind).toBe('splitLine');
+    if (firstBlock?.kind !== 'splitLine') return;
+
+    // The fixture link is `github.com/ada/etl` — no scheme, which is not
+    // something a renderer can open as a URL. The visible text is unchanged;
+    // only the link target gains a scheme.
+    expect(firstBlock.right[0]?.text).toBe('github.com/ada/etl');
+    expect(firstBlock.right[0]?.href).toBe('https://github.com/ada/etl');
+  });
+
+  it('leaves a link with an explicit scheme untouched', () => {
+    const library = makeLibrary({ projects: [makeProject('etl', { link: 'http://etl.example.com' })] });
+    const result = new ResumeComposer().compose(makeVariant('v', { projectIds: ['etl'] }), library);
+    if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
+
+    const projects = result.value.sections.find((s) => s.heading === SECTION_HEADINGS.projects);
+    const firstBlock = projects?.blocks[0];
+    if (firstBlock?.kind !== 'splitLine') throw new Error('expected a split line');
+
+    expect(firstBlock.right[0]?.href).toBe('http://etl.example.com');
+  });
+
+  it('leaves an empty project link with no href, rather than linking to nothing', () => {
+    const library = makeLibrary({ projects: [makeProject('etl', { link: '' })] });
+    const result = new ResumeComposer().compose(makeVariant('v', { projectIds: ['etl'] }), library);
+    if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
+
+    const projects = result.value.sections.find((s) => s.heading === SECTION_HEADINGS.projects);
+    const firstBlock = projects?.blocks[0];
+    if (firstBlock?.kind !== 'splitLine') throw new Error('expected a split line');
+
+    expect(firstBlock.right[0]?.href).toBeUndefined();
   });
 
   it('centers the header name and contact line', () => {
