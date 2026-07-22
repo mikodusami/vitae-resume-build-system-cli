@@ -142,6 +142,22 @@ export class StyleResolver {
     return { left: this.theme.bullet.indent, hanging: this.theme.bullet.hanging };
   }
 
+  /**
+   * Run options for a hyperlink's visible text.
+   *
+   * A docx `ExternalHyperlink` does not pick up the conventional blue,
+   * underlined look on its own — that appearance comes from explicit run
+   * formatting, which is why it is set here rather than left to whatever the
+   * viewer defines for a "Hyperlink" character style, which may not exist.
+   */
+  public hyperlinkRunOptions(run: TextRun): IRunOptions {
+    return {
+      ...this.runOptions(run),
+      color: '0563C1',
+      underline: {},
+    };
+  }
+
   /** Run options for a section heading's text. */
   public headingRunOptions(text: string): IRunOptions {
     return {
