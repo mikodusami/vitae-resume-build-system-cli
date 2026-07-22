@@ -47,6 +47,18 @@ describe('DocxRenderer document body', () => {
     expect(rels).toMatch(/Target="https:\/\/github\.com\/ada\/[^"]+"/);
   });
 
+  it('links the header email and URL, but never the phone number', async () => {
+    const buffer = await new DocxRenderer().render(makeDocument());
+    const rels = readZipEntry(buffer, 'word/_rels/document.xml.rels');
+
+    // Fixture contact: ['ada@example.com', '555-0100', 'github.com/ada'] — one
+    // run per fragment, so only two of the three should ever become a
+    // hyperlink relationship.
+    expect(rels).toContain('Target="mailto:ada@example.com"');
+    expect(rels).toContain('Target="https://github.com/ada"');
+    expect(rels).not.toContain('555-0100');
+  });
+
   it('right-aligns the second half of a split line', async () => {
     const xml = await renderDocumentXml();
 
