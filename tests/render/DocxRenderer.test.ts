@@ -28,6 +28,25 @@ describe('DocxRenderer document body', () => {
     expect(xml).not.toContain('•');
   });
 
+  it('renders a project link as a real clickable hyperlink, not styled text', async () => {
+    const buffer = await new DocxRenderer().render(makeDocument());
+    const xml = readZipEntry(buffer, 'word/document.xml');
+    const rels = readZipEntry(buffer, 'word/_rels/document.xml.rels');
+
+    // A `<w:hyperlink>` field pointing at a relationship id, not merely a run
+    // styled to look like a link — text with no field behind it is not
+    // clickable in any viewer, which was the bug this closes.
+    const match = xml.match(/<w:hyperlink[^>]*r:id="(rId[a-z0-9_-]+)"/);
+    expect(match).not.toBeNull();
+
+    const relId = match?.[1] ?? '';
+    expect(rels).toContain(`Id="${relId}"`);
+    expect(rels).toContain('TargetMode="External"');
+    // The fixture project link has no scheme; the composer must have added one,
+    // or Word cannot open it as a URL at all.
+    expect(rels).toMatch(/Target="https:\/\/github\.com\/ada\/[^"]+"/);
+  });
+
   it('right-aligns the second half of a split line', async () => {
     const xml = await renderDocumentXml();
 
@@ -162,6 +181,17 @@ describe('DocxRenderer document properties', () => {
   });
 });
 
+/**
+ * Docx assigns each hyperlink a random relationship id (`nanoid()`, internal
+ * to the library, with no way to seed it) every time a document is packed.
+ * It is plumbing — like the zip entry timestamps already excluded from the
+ * determinism claim below — not content, so it is normalized out before
+ * comparing rather than treated as a genuine difference.
+ */
+function normalizeVolatileIds(xml: string): string {
+  return xml.replace(/r:id="rId[a-z0-9_-]+"/g, 'r:id="rId_STABLE"');
+}
+
 describe('DocxRenderer determinism', () => {
   it('renders identical content for identical input', async () => {
     const doc = makeDocument();
@@ -175,6 +205,6 @@ describe('DocxRenderer determinism', () => {
     // the zip records entry timestamps. The rendered content is what must be
     // stable, and nothing downstream depends on docx bytes — the archive
     // convention stamps builds with the git hash of the source content.
-    expect(first).toBe(second);
+    expect(normalizeVolatileIds(first)).toBe(normalizeVolatileIds(second));
   });
 });
