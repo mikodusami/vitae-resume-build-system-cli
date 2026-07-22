@@ -83,6 +83,7 @@ Renders variants and writes them to `dist/`.
 | `--force`         | build even when a claim cannot be defended                    |
 | `--out <dir>`     | write here instead of the workspace `dist/`                   |
 | `--archive`       | also write a dated, hash-stamped copy to `archive/`           |
+| `--label <text>`  | who the archived copy is for, e.g. a company (needs `--archive`, single variant) |
 | `--pdf`           | also convert to PDF (requires LibreOffice)                    |
 
 With no argument, builds `defaultVariant` from `config.json`.
@@ -120,6 +121,26 @@ historical record, not a cache.
 
 Rule of thumb: `--archive` whenever you actually send one; plain builds while
 iterating.
+
+### `--label`
+
+The hash identifies the build for `git show`, but it is not what you remember
+two weeks later when a recruiter replies. `--label` puts something you'll
+actually recall into the filename:
+
+```bash
+vitae build data-engineer --archive --label "TechCorp"
+# archive/2026-07-22_data-engineer_techcorp_a1b2c3d.docx
+```
+
+The label is slugified the same way variant ids are — lowercased, spaces and
+punctuation collapsed to underscores — so `"Acme Data Team"` becomes
+`acme_data_team`. It is free text; use a company name, a role title, whatever
+you'd actually search the folder for later.
+
+Only valid alongside `--archive`, and only for a single variant — `--all`
+builds every resume in the workspace, and one label cannot name all of them.
+Combining the two is a usage error, exit `1`.
 
 ---
 

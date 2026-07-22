@@ -139,11 +139,15 @@ Without git the tool still works; archives are just stamped `nogit` and warn.
 ## Day-to-day
 
 ```bash
-vitae build software-engineer                 # iterating
-vitae build software-engineer --archive       # actually sending it
-vitae prep software-engineer --out prep.md    # before the interview
-vitae check --all                             # before you trust any of it
+vitae build software-engineer                                    # iterating
+vitae build software-engineer --archive --label "TechCorp"       # actually sending it
+vitae prep software-engineer --out prep.md                       # before the interview
+vitae check --all                                                # before you trust any of it
 ```
+
+`--label` names who the archive is for, so `archive/` is browsable by company
+name later — you'll remember "TechCorp" long before you remember a commit
+hash.
 
 ## Optional capabilities
 
