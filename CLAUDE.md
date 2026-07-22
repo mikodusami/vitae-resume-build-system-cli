@@ -43,15 +43,35 @@ Layer 1 (built) is `src/domain/`:
 
 `src/domain/index.ts` is the only entry point outer layers should import from.
 
-`src/cli/` is a thin shell shipped ahead of its layer: `main.ts` dispatches
-argv, and `commands/` holds `demo`, `list`, `check`, and `prep` — everything
-the domain can answer without I/O. Two rules keep it honest:
+Layer 2 (built) is `src/infra/` — the anti-corruption layer. Everything
+crossing in from disk is untrusted, and nothing reaches the domain unverified,
+which is what lets Layer 1 assume well-formed inputs:
 
-- Content comes from `src/cli/sampleContent.ts` until Layer 2's loader exists,
-  and `--help` says so. Do not add a command that reads the filesystem here;
-  that belongs to `infra/` behind the `ContentRepository` port.
-- Commands in `PLANNED_COMMANDS` (`init`, `build`, `where`, `diff`) exit 2 with
-  the layer that will implement them. Move one out of that map only when it
+- `workspace/Workspace.ts` — resolves `.vitae/` (explicit dir → `VITAE_DIR` →
+  walking up from cwd → `~/.vitae`) and owns every derived path. Ask it rather
+  than re-deriving paths anywhere else.
+- `loader/` — `ModuleLoader` port, `JitiModuleLoader` (runtime TS, caching off),
+  `FakeModuleLoader` for tests. Module execution is abstracted; plain `fs`
+  reads deliberately are not.
+- `schema/contentSchemas.ts` — zod schemas annotated `z.ZodType<DomainType>`.
+  **Never use `z.infer`** — the annotation is what turns domain/schema drift
+  into a compile error. Content objects are `strictObject`; `config.json` is
+  not, so newer configs don't break older tools.
+- `schema/mapper.ts` — the single `ZodError` → diagnostic translation. No zod
+  or jiti stack trace may reach a user; everything funnels through here.
+- `content/FileContentRepository.ts` — the `ContentRepository` implementation.
+  Aggregates: never stop at the first bad file.
+
+`src/cli/` dispatches argv (`main.ts`) with commands in `commands/`.
+Rules that keep it honest:
+
+- `contentSource.ts` decides provenance. No workspace anywhere → built-in
+  sample content with a stderr note. Workspace found but broken → print
+  diagnostics and exit 1, **never** fall back. Silently building the sample
+  resume because the user's content has a typo is the worst failure mode
+  available.
+- Commands in `PLANNED_COMMANDS` (`init`, `build`, `diff`) exit 2 with the
+  layer that will implement them. Move one out of that map only when it
   genuinely works.
 
 Exit codes: 0 success, 1 failure (unknown ID, error-severity diagnostic),
@@ -68,7 +88,10 @@ tests pass.
 - Single quotes, semicolons, trailing commas, ~100 char lines.
 - Errors are returned as `Result`, not thrown; resolution errors accumulate so
   one run reports every bad ID. `throw` is for programmer bugs only.
-- Tests use in-memory fixtures from `tests/domain/fixtures.ts` — no filesystem.
+- Domain tests use in-memory fixtures from `tests/domain/fixtures.ts` — no
+  filesystem. Infra tests use real temp directories (`tests/infra/fixtures.ts`)
+  plus `tests/fixtures/workspace/`, a genuine valid `.vitae/` folder that will
+  double as the `vitae init` template seed.
 
 See `decisions.md` for the reasoning behind each of these, `userflows.md` for
 how to verify a layer by hand, and `layers.md` for the build order.
