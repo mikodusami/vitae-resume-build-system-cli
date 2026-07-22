@@ -16,6 +16,12 @@ vitae build --all
 That produces four `.docx` files in `.vitae/dist/`, built from an example
 resume you then replace with your own.
 
+**Documentation:** [getting started](docs/getting-started.md) ·
+[commands](docs/commands.md) · [content schema](docs/content-schema.md) ·
+[claims registry](docs/claims.md) · [theming](docs/theming.md) ·
+[architecture](docs/architecture.md) ·
+[troubleshooting](docs/troubleshooting.md)
+
 ## Why this exists
 
 Three problems with keeping resumes in Word:
@@ -170,8 +176,11 @@ npm run typecheck && npm run lint && npm test
 npm run link          # build, then expose `vitae` globally
 ```
 
-Verification flows for every layer are in [userflows.md](userflows.md); the
-reasoning behind each design choice is in [decisions.md](decisions.md).
+**Full documentation is in [docs/](docs/README.md)** — usage guides for every
+command and content file, plus an architecture walkthrough and a traced build
+pipeline. Verification flows for every layer are in
+[userflows.md](userflows.md); the reasoning behind each design choice, with
+dates, is in [decisions.md](decisions.md).
 
 ### Architecture
 
