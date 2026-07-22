@@ -26,15 +26,16 @@ const EXTENSIONS: Readonly<Record<OutputFormat, string>> = {
 };
 
 /**
- * Converts a variant ID into a filename-safe slug.
+ * Converts arbitrary text into a filename-safe slug.
  *
- * Hyphens become underscores so filenames read as one token
- * (`resume_llm_infrastructure.docx`), and anything unexpected is stripped
- * rather than trusted — a variant ID becomes a path, and a path built from
- * unsanitised input is how a stray `/` turns into a write somewhere surprising.
+ * Shared by every naming strategy — a variant ID, and now an archive label,
+ * both become part of a path, and a path segment built from unsanitised input
+ * is how a stray `/` turns into a write somewhere surprising. Non-alphanumeric
+ * runs become a single underscore so filenames read as one token
+ * (`resume_llm_infrastructure.docx`, `techcorp_data_science_team`).
  */
-function slugify(variantId: string): string {
-  return variantId
+export function slugify(text: string): string {
+  return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
