@@ -11,7 +11,7 @@ import {
   joinPath,
 } from './fakes.js';
 
-const WORKSPACE = { root: '/ws', distDir: '/ws/dist' };
+const WORKSPACE = { root: '/ws', distDir: '/ws/dist', archiveDir: '/ws/.vitae/archive' };
 
 /** Assembles an application over fakes, as the composition root would. */
 function makeApplication(

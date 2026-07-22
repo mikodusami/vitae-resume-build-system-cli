@@ -63,6 +63,7 @@ export class FakeContentRepository implements ContentRepository {
 export class FakeArtifactWriter implements ArtifactWriter {
   public readonly writes: { path: string; byteLength: number }[] = [];
   public readonly ensuredDirs: string[] = [];
+  private readonly existing = new Set<string>();
   private failWritePath: string | undefined;
   private failEnsure = false;
 
@@ -76,6 +77,20 @@ export class FakeArtifactWriter implements ArtifactWriter {
   public failEnsureDir(): this {
     this.failEnsure = true;
     return this;
+  }
+
+  /** Pretends a file is already there, for the append-only archive path. */
+  public withExisting(...paths: readonly string[]): this {
+    for (const path of paths) {
+      this.existing.add(path);
+    }
+    return this;
+  }
+
+  public exists(absPath: string): Promise<boolean> {
+    return Promise.resolve(
+      this.existing.has(absPath) || this.writes.some((write) => write.path === absPath),
+    );
   }
 
   public ensureDir(absPath: string): Promise<Result<void, IoError>> {
