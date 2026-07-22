@@ -33,7 +33,14 @@ export default {
 | `contact` | `string[]` | at least one, each non-empty       |
 
 `name` is also the document `creator` property and half of its `title`.
-Contact entries are joined with ` | ` on one centered line.
+Contact entries appear in order on one centered line, separated by ` | `.
+
+**Each entry is checked individually and linked if it looks linkable** — an
+email becomes a `mailto:` link, a bare domain (`github.com/jrivera`) becomes
+`https://`, and an address that already declares its own scheme
+(`tel:+15550100`) is left exactly as written. Anything else — a phone number
+written as digits, a city — stays plain, unlinked text; nothing is guessed at
+beyond those two patterns.
 
 ---
 
