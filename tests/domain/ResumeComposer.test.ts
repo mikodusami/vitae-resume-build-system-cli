@@ -154,7 +154,7 @@ describe('ResumeComposer', () => {
     expect(degreeLine.right[0]?.text).toBe('May 2026');
   });
 
-  it('shows a GPA line under the degree when the entry has one', () => {
+  it('folds the GPA onto the degree line when the entry has one', () => {
     const library = makeLibrary({
       education: makeEducation({ gpa: { label: 'Major GPA', value: '3.32' } }),
     });
@@ -162,18 +162,27 @@ describe('ResumeComposer', () => {
     if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
 
     const education = result.value.sections.find((s) => s.heading === SECTION_HEADINGS.education);
-    const gpaBlock = education?.blocks[2];
-    expect(gpaBlock?.kind).toBe('paragraph');
-    if (gpaBlock?.kind !== 'paragraph') return;
-    expect(gpaBlock.runs.map((r) => r.text).join('')).toBe('Major GPA: 3.32');
+    const degreeLine = education?.blocks[1];
+    expect(degreeLine?.kind).toBe('splitLine');
+    if (degreeLine?.kind !== 'splitLine') return;
+
+    expect(degreeLine.left.map((r) => r.text).join('')).toBe(
+      'B.S. Computer Science, Major GPA: 3.32',
+    );
+    // GPA rides on the degree line; it must not add a line of its own.
+    expect(education?.blocks).toHaveLength(3);
   });
 
-  it('omits the GPA line entirely when the entry has none', () => {
+  it('leaves the degree line as-is when the entry has no GPA', () => {
     const doc = composeOrThrow();
 
     const education = doc.sections.find((s) => s.heading === SECTION_HEADINGS.education);
-    // Institution/location, degree/date, coursework — no GPA line between
-    // the degree and the coursework when `gpa` is absent.
+    const degreeLine = education?.blocks[1];
+    expect(degreeLine?.kind).toBe('splitLine');
+    if (degreeLine?.kind !== 'splitLine') return;
+
+    expect(degreeLine.left.map((r) => r.text).join('')).toBe('B.S. Computer Science');
+    // Institution/location, degree/date, coursework — no extra line.
     expect(education?.blocks).toHaveLength(3);
   });
 
