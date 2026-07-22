@@ -297,3 +297,12 @@ version.
 
 That setting no longer exists — remove the line. The right-hand column is now
 derived from `page.width - 2 × page.margin`.
+
+### Project links aren't clickable
+
+Rebuild with a current version. Project links used to render as styled text
+only — the right size and colour, but no actual link behind it in any viewer.
+They're now real `<w:hyperlink>` fields with a proper relationship target, so
+a current build fixes this with no content changes on your end. See
+[content-schema.md](content-schema.md) for how the `link` field becomes an
+href (a scheme is added automatically if you didn't write one).

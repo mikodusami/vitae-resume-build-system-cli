@@ -123,6 +123,12 @@ export default [
 
 A duplicate `id` is rejected at load with `DUPLICATE_ID`.
 
+**`link` renders as a real, clickable hyperlink**, not just styled text. Write
+it however you'd naturally read it aloud — `github.com/jrivera/ledger` — and
+the build adds `https://` for you if you didn't include a scheme. An address
+that already has one (`http://`, `mailto:`) is left exactly as written. An
+empty `link` produces no hyperlink at all, rather than a link to nowhere.
+
 ### Alternate framings
 
 Two projects may share a `claimId`. That is how you describe the same
