@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DOMAIN_ERROR_CODES } from '../../src/domain/errors/domainError.js';
 import { ResumeComposer, SECTION_HEADINGS } from '../../src/domain/services/ResumeComposer.js';
 import type { ResumeDocument } from '../../src/domain/document/resumeDocument.js';
-import { makeHeader, makeLibrary, makeProject, makeVariant } from './fixtures.js';
+import { makeEducation, makeHeader, makeLibrary, makeProject, makeVariant } from './fixtures.js';
 
 /** Composes, failing the test loudly if composition was expected to succeed. */
 function composeOrThrow(variantOverrides = {}): ResumeDocument {
@@ -137,11 +137,51 @@ describe('ResumeComposer', () => {
     expect(contactBlock.runs[2]?.href).toBe('tel:+15550100');
   });
 
+  it('splits institution/location and degree/date onto their own lines', () => {
+    const doc = composeOrThrow();
+
+    const education = doc.sections.find((s) => s.heading === SECTION_HEADINGS.education);
+    const institutionLine = education?.blocks[0];
+    const degreeLine = education?.blocks[1];
+
+    expect(institutionLine?.kind).toBe('splitLine');
+    expect(degreeLine?.kind).toBe('splitLine');
+    if (institutionLine?.kind !== 'splitLine' || degreeLine?.kind !== 'splitLine') return;
+
+    expect(institutionLine.left[0]?.text).toBe('Analytical University');
+    expect(institutionLine.right[0]?.text).toBe('Cambridge, MA');
+    expect(degreeLine.left[0]?.text).toBe('B.S. Computer Science');
+    expect(degreeLine.right[0]?.text).toBe('May 2026');
+  });
+
+  it('shows a GPA line under the degree when the entry has one', () => {
+    const library = makeLibrary({
+      education: makeEducation({ gpa: { label: 'Major GPA', value: '3.32' } }),
+    });
+    const result = new ResumeComposer().compose(makeVariant('v'), library);
+    if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
+
+    const education = result.value.sections.find((s) => s.heading === SECTION_HEADINGS.education);
+    const gpaBlock = education?.blocks[2];
+    expect(gpaBlock?.kind).toBe('paragraph');
+    if (gpaBlock?.kind !== 'paragraph') return;
+    expect(gpaBlock.runs.map((r) => r.text).join('')).toBe('Major GPA: 3.32');
+  });
+
+  it('omits the GPA line entirely when the entry has none', () => {
+    const doc = composeOrThrow();
+
+    const education = doc.sections.find((s) => s.heading === SECTION_HEADINGS.education);
+    // Institution/location, degree/date, coursework — no GPA line between
+    // the degree and the coursework when `gpa` is absent.
+    expect(education?.blocks).toHaveLength(3);
+  });
+
   it("prefers the variant's coursework over the education default", () => {
     const doc = composeOrThrow({ coursework: 'Compilers' });
 
     const education = doc.sections.find((s) => s.heading === SECTION_HEADINGS.education);
-    const courseworkBlock = education?.blocks[1];
+    const courseworkBlock = education?.blocks[2];
     expect(courseworkBlock?.kind).toBe('paragraph');
     if (courseworkBlock?.kind !== 'paragraph') return;
     expect(courseworkBlock.runs.map((r) => r.text).join('')).toContain('Compilers');
@@ -151,7 +191,7 @@ describe('ResumeComposer', () => {
     const doc = composeOrThrow({ coursework: '' });
 
     const education = doc.sections.find((s) => s.heading === SECTION_HEADINGS.education);
-    const courseworkBlock = education?.blocks[1];
+    const courseworkBlock = education?.blocks[2];
     if (courseworkBlock?.kind !== 'paragraph') throw new Error('expected coursework paragraph');
     expect(courseworkBlock.runs.map((r) => r.text).join('')).toContain('Algorithms, Databases');
   });
