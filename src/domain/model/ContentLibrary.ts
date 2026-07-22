@@ -8,6 +8,7 @@
 import {
   DuplicateIdError,
   UnknownClaimError,
+  UnknownJobError,
   UnknownProjectError,
   UnknownVariantError,
 } from '../errors/domainError.js';
@@ -57,12 +58,13 @@ export class ContentLibrary {
   private constructor(
     private readonly data: ContentLibraryData,
     private readonly projectIndex: ReadonlyMap<string, Project>,
+    private readonly jobIndex: ReadonlyMap<string, Job>,
     private readonly claimIndex: ReadonlyMap<string, Claim>,
     private readonly variantIndex: ReadonlyMap<string, Variant>,
   ) {}
 
   /**
-   * Builds a library, rejecting duplicate project, claim, or variant IDs.
+   * Builds a library, rejecting duplicate project, job, claim, or variant IDs.
    *
    * Duplicate IDs are a content bug worth catching at construction rather than
    * at render time, where the symptom would be a silently dropped entry.
@@ -72,25 +74,33 @@ export class ContentLibrary {
    */
   public static create(data: ContentLibraryData): Result<ContentLibrary, DuplicateIdError[]> {
     const projects = indexById('projects', data.projects);
+    const jobs = indexById('jobs', data.jobs);
     const claims = indexById('claims', data.claims);
     const variants = indexById('variants', data.variants);
 
     const errors: DuplicateIdError[] = [];
     if (!projects.ok) errors.push(projects.error);
+    if (!jobs.ok) errors.push(jobs.error);
     if (!claims.ok) errors.push(claims.error);
     if (!variants.ok) errors.push(variants.error);
 
-    if (!projects.ok || !claims.ok || !variants.ok) {
+    if (!projects.ok || !jobs.ok || !claims.ok || !variants.ok) {
       return err(errors);
     }
 
-    return ok(new ContentLibrary(data, projects.value, claims.value, variants.value));
+    return ok(new ContentLibrary(data, projects.value, jobs.value, claims.value, variants.value));
   }
 
   /** Looks up a project by ID. */
   public getProject(id: string): Result<Project, UnknownProjectError> {
     const project = this.projectIndex.get(id);
     return project === undefined ? err(new UnknownProjectError(id)) : ok(project);
+  }
+
+  /** Looks up a job by ID. */
+  public getJob(id: string): Result<Job, UnknownJobError> {
+    const job = this.jobIndex.get(id);
+    return job === undefined ? err(new UnknownJobError(id)) : ok(job);
   }
 
   /** Looks up a claim by ID. */
