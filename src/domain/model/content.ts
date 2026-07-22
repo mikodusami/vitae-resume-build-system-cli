@@ -17,11 +17,20 @@ export interface Header {
   readonly contact: readonly string[];
 }
 
+/** A labeled figure shown after the degree line, e.g. `{ label: 'Major GPA', value: '3.32' }`. */
+export interface GpaEntry {
+  readonly label: string;
+  readonly value: string;
+}
+
 /** The education entry, with per-variant coursework selection. */
 export interface Education {
   readonly institution: string;
+  readonly location: string;
   readonly degree: string;
   readonly date: string;
+  /** Shown as `label: value` right under the degree line, when present. */
+  readonly gpa?: GpaEntry | undefined;
   /** Default coursework line; a variant may override it. */
   readonly coursework: string;
 }
