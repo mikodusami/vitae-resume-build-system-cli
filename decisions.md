@@ -5,6 +5,73 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Layer 3: Theme & Rendering
+
+### 2026-07-22 · Theme enters the system at Layer 3 and nowhere earlier
+
+Layer 2 deliberately left `themeFile` as a path. The `Theme` type, its schema,
+its defaults, and its loader all live in `src/render/`. Nothing below this layer
+has ever heard of a font, which is the property that keeps the domain reusable.
+Themes merge over `DEFAULT_THEME`, so a user who wants a different font says
+only that — defaults living in the tool are what keep theme files small and
+diffable.
+
+### 2026-07-22 · One seam translates meaning into appearance
+
+`StyleResolver` is the only class that reads `theme.sizes`. Every "what does a
+`meta` run look like" question resolves there, so restyling the resume means
+editing the resolver or the theme, never the block renderers.
+
+### 2026-07-22 · Block renderers are a typed registry, not a switch
+
+Handlers are keyed by block kind through a mapped type over the IR union. That
+buys pluggability and exhaustiveness at once: adding a block kind means adding
+a handler, and TypeScript refuses to compile a registry missing one. Reach for
+this pattern whenever "open for extension" and "prove nothing was forgotten"
+both matter.
+
+### 2026-07-22 · A second renderer ships now, not later
+
+`PlainTextRenderer` is a deliverable, not a nice-to-have. It takes no theme at
+all, so if the IR had quietly become docx-shaped, writing it would have hurt
+immediately — while the design was still cheap to fix — rather than in six
+months. It writes correctly with no presentational input, which is the
+evidence that the domain did not leak. It also earns its keep as ATS-safe
+output and as the golden-file regression signal.
+
+### 2026-07-22 · Determinism is asserted on content, not on bytes
+
+**This deviates from the layer spec, deliberately.** The spec asked for
+byte-identical buffers across renders. That is not achievable with docx 9.x:
+the library writes `dcterms:created`/`modified` from its own internal
+`new Date()` with no override in `IPropertiesOptions`, and the zip container
+stamps entry timestamps too.
+
+Rather than reimplementing the packer or post-processing the archive, the test
+asserts that `word/document.xml` is identical across renders — the content is
+what must be stable. Nothing downstream depends on docx bytes being
+reproducible: per the system design, archived builds are stamped with the git
+hash of the *content* that produced them, not a hash of the output file. If a
+future requirement genuinely needs reproducible bytes, this is the decision to
+revisit.
+
+### 2026-07-22 · docx constraints are encoded, not rediscovered
+
+Four docx-js behaviours are silent-corruption bugs rather than crashes, so each
+is stated in `DocxRenderer` and asserted in the tests: never emit `\n` inside a
+run; never insert a literal `•` (bullets come from the numbering config, or
+they are not lists to Word, an ATS, or a screen reader); set page size
+explicitly or output silently becomes A4; a `PageBreak` must live inside a
+paragraph.
+
+### 2026-07-22 · The renderer never improves content
+
+Nothing is inferred, reordered, or injected that the IR did not say. If output
+needs something the IR cannot express, that is a domain change, not a special
+case in a block renderer.
+
+---
+
 ## 2026-07-22 — Layer 2: Workspace & Content Loading
 
 ### 2026-07-22 · Schemas are bound to domain types, never inferred from them
