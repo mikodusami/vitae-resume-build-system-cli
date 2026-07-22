@@ -62,6 +62,28 @@ which is what lets Layer 1 assume well-formed inputs:
 - `content/FileContentRepository.ts` — the `ContentRepository` implementation.
   Aggregates: never stop at the first bad file.
 
+Layer 3 (built) is `src/render/` — everything presentational. Theme enters the
+system here and nowhere earlier:
+
+- `theme/` — `Theme`, `DEFAULT_THEME`, and `ThemeLoader`. **Units differ within
+  one object**: DXA (1440 = 1 inch) for lengths, half-points for `sizes`,
+  eighths of a point for border size. Themes are deep-partial and merge over
+  the defaults; a missing theme file means defaults, not an error.
+- `docx/StyleResolver.ts` — the only code that reads `theme.sizes`. Restyling
+  happens here or in the theme, never in a block renderer.
+- `docx/blocks/registry.ts` — handlers keyed by block kind via a mapped type
+  over the IR union, so a missing kind is a compile error. Add a block kind →
+  add a handler.
+- `docx/DocxRenderer.ts` / `text/PlainTextRenderer.ts` — both behind
+  `Renderer<T>`. No format-selection logic lives in this layer.
+
+Rules here: the renderer never "improves" content (nothing inferred,
+reordered, or injected that the IR did not say — if output needs something the
+IR cannot express, change the domain). `PlainTextRenderer` must never need a
+theme; if it does, the IR has leaked. Nothing in `src/render/` writes to disk.
+Determinism is asserted on `word/document.xml`, not whole buffers — see
+`decisions.md` for why byte-identity is unreachable with docx 9.x.
+
 `src/cli/` dispatches argv (`main.ts`) with commands in `commands/`.
 Rules that keep it honest:
 
