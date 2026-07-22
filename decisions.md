@@ -5,6 +5,69 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Layer 2: Workspace & Content Loading
+
+### 2026-07-22 · Schemas are bound to domain types, never inferred from them
+
+Every boundary schema is annotated `z.ZodType<DomainType>` rather than having
+its type produced by `z.infer`. The inversion is the point: the domain leads
+and the boundary follows, so adding a field to a domain type and forgetting the
+schema breaks the build instead of confusing a user at runtime.
+
+This forced two small domain changes, both recorded as deliberate: `DomainError.code`
+widened from the domain-only code union to `string` so loading errors can join
+the same hierarchy, and `Claim.reviewNotes` gained an explicit `| undefined`
+because an optional zod field yields `T | undefined` under
+`exactOptionalPropertyTypes`. The alternative — casting at the boundary — would
+have hidden exactly the drift this decision exists to catch.
+
+### 2026-07-22 · Objects are strict; unknown keys fail
+
+A mistyped `bullet:` that silently vanishes from a resume is far worse than a
+loud failure, so content schemas are `strictObject`. The one exception is
+`config.json`, where unknown keys warn instead: a config written by a newer
+version of the tool should not hard-break an older one.
+
+### 2026-07-22 · Abstract what is hard to fake, not everything
+
+Executing user TypeScript at runtime sits behind a `ModuleLoader` port with a
+jiti adapter and a `FakeModuleLoader`. Plain file reads do **not** — they are
+tested against real temp directories, because faking `fs` would be ceremony
+that ends up testing the mock. `FakeModuleLoader` ships in `src/` rather than
+`tests/` so later layers reuse it instead of growing their own copy.
+
+### 2026-07-22 · Convention over manifest for variants
+
+Any module in `variants/` is a variant and its filename is its ID. Adding one
+is dropping in a file — no registry to update. A declared `id` that disagrees
+with the filename is an error, not a silent preference: ambiguity about which
+name wins costs an hour the day it finally matters.
+
+### 2026-07-22 · Diagnostics aggregate and carry provenance
+
+A load reports every problem at once, each naming the file and the dotted path
+within it (`variants/data-engineer.ts: skills[2].label — expected string,
+received number`). One `ZodDiagnosticMapper` produces all of them, so every
+validation message in the tool reads the same way, and no zod or jiti stack
+trace can reach a user.
+
+### 2026-07-22 · A broken workspace never falls back to sample content
+
+If no `.vitae/` resolves anywhere, commands use built-in sample content and say
+so on stderr. But if a workspace is found and fails to load, the command prints
+the diagnostics and exits 1. Silently building someone else's example resume
+because your own content has a typo is the worst available failure mode.
+
+### 2026-07-22 · `Workspace` is an object, not a path string
+
+Once resolved, a `Workspace` answers every "where does X live" question —
+content, variants, dist, archive, theme, config. Later layers ask it instead of
+re-deriving paths, so the folder convention lives in exactly one place. An
+explicit `--dir` that does not exist fails immediately rather than falling
+through to discovery, for the same reason as above.
+
+---
+
 ## 2026-07-22 — Layer 1: Domain Core
 
 ### 2026-07-22 · Clean/Hexagonal layering with mechanical enforcement
