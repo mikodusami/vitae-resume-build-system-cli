@@ -27,6 +27,7 @@ const data: ContentLibraryData = {
   },
   education: {
     institution: "Analytical University",
+    location: "Cambridge, MA",
     degree: "B.S. Computer Science",
     date: "May 2026",
     coursework: "Algorithms, Databases",

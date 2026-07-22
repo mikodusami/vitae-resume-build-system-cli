@@ -30,6 +30,7 @@ export function makeHeader(overrides: Partial<Header> = {}): Header {
 export function makeEducation(overrides: Partial<Education> = {}): Education {
   return {
     institution: 'Analytical University',
+    location: 'Cambridge, MA',
     degree: 'B.S. Computer Science',
     date: 'May 2026',
     coursework: 'Algorithms, Databases',

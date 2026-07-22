@@ -82,6 +82,7 @@ export function registerValidWorkspace(loader: FakeModuleLoader, workspace: Fake
   });
   loader.set(join(workspace.contentDir, 'education.ts'), {
     institution: 'Analytical University',
+    location: 'Cambridge, MA',
     degree: 'B.S. Computer Science',
     date: 'May 2026',
     coursework: 'Algorithms',
