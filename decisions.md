@@ -617,3 +617,14 @@ missing `location` now fails `SCHEMA_VALIDATION_FAILED` with a clear
 `location — expected string, received undefined`, rather than silently
 building an incomplete resume. Every fixture, the golden plain-text file, the
 `init` template, and `examples/composeDemo.ts` were updated to match.
+
+### 2026-07-22 · Correction: GPA folds onto the degree line, not its own line
+
+Follow-up to the entry above — the GPA placement there was wrong. The correct
+layout puts it on the **same line** as the degree, comma-separated:
+`B.S. Computer Science, Major GPA: 3.32`, not on a line of its own underneath.
+
+`composeEducationBlocks` now appends `, ${gpa.label}: ${gpa.value}` as an
+additional run on the degree line's left side, inside the same `splitLine` as
+before, rather than pushing a separate paragraph block. `Education.gpa` and
+its schema are unchanged — only where the composer places the text moved.
