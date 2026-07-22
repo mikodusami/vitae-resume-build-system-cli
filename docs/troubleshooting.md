@@ -86,6 +86,13 @@ remember ids are the `id` field in `projects.ts`, not project names.
 
 Every unknown id in a run is reported at once, so fix them all in one pass.
 
+### `UNKNOWN_JOB`
+
+A variant's `jobIds` names an id that no entry in `work.ts` defines. Same fix
+as `UNKNOWN_PROJECT`: check for a typo against `id`, not `title`. If you don't
+need per-variant job selection at all, delete `jobIds` from the variant —
+every job in `work.ts` shows by default.
+
 ### `UNKNOWN_CLAIM`
 
 A project's `claimId` has no matching entry in `claims.ts`. Every project needs

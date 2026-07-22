@@ -98,7 +98,9 @@ Work in this order — it follows the dependencies:
 2. **`content/education.ts`** — your degree, institution, and location. `gpa`
    is optional; delete it if you'd rather not show one.
 3. **`content/work.ts`** — your jobs. Lead each bullet with what changed and
-   carry a number wherever one honestly exists.
+   carry a number wherever one honestly exists. Every job shows on every
+   resume by default; a variant's optional `jobIds` picks a subset, same as
+   `projectIds` does for projects.
 4. **`content/projects.ts`** — every project you might put on a resume, each
    with a unique `id`.
 5. **`content/claims.ts`** — one claim per project `claimId`, with a

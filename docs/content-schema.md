@@ -85,11 +85,13 @@ them would only let the tool disagree with you about your own history.
 
 ## `content/work.ts`
 
-An **array** of jobs, rendered in the order given.
+An **array** of jobs. Shown on every variant, in the order given, unless a
+variant sets its own `jobIds`.
 
 ```ts
 export default [
   {
+    id: 'swe-intern',
     title: 'Software Engineering Intern',
     org: 'Northwind Logistics',
     location: 'Chicago, IL',
@@ -101,16 +103,40 @@ export default [
 ];
 ```
 
-| Field      | Type       | Rules                            |
-| ---------- | ---------- | -------------------------------- |
-| `title`    | `string`   | non-empty                        |
-| `org`      | `string`   | non-empty                        |
-| `location` | `string`   | non-empty                        |
-| `date`     | `string`   | non-empty                        |
-| `bullets`  | `string[]` | **at least one**, each non-empty |
+| Field      | Type       | Rules                                      |
+| ---------- | ---------- | ------------------------------------------- |
+| `id`       | `string`   | non-empty, **unique across all jobs**       |
+| `title`    | `string`   | non-empty                                  |
+| `org`      | `string`   | non-empty                                  |
+| `location` | `string`   | non-empty                                  |
+| `date`     | `string`   | non-empty                                  |
+| `bullets`  | `string[]` | **at least one**, each non-empty           |
 
-Work history is shared across every variant — there is no per-variant job
-selection. If you need one, that is a domain change, not a workaround.
+A duplicate `id` is rejected at load with `DUPLICATE_ID`, same as projects.
+
+### Per-variant job selection
+
+A variant's optional `jobIds` picks and orders a subset, exactly like
+`projectIds` does for projects:
+
+```ts
+// variants/data-engineer.ts
+export default {
+  id: 'data-engineer',
+  label: 'Data Engineer',
+  // ...
+  jobIds: ['research-assistant', 'swe-intern'],
+};
+```
+
+**Omit `jobIds` entirely** to show every job in `work.ts`, in file order —
+that is the tool's original behavior and the default for every variant that
+doesn't set it. An unknown id in `jobIds` is `UNKNOWN_JOB`, reported alongside
+any unknown `projectIds` in the same run rather than stopping at the first.
+
+Leadership entries reuse this same shape (see below) and therefore need an
+`id` too, but it goes unused there — `leadership.ts` entries always all show;
+there is no `leadershipIds`.
 
 ---
 
@@ -173,6 +199,7 @@ An object with two keys, not an array.
 export default {
   entries: [
     {
+      id: 'teaching-assistant',
       title: 'Teaching Assistant, Data Structures',
       org: 'State University',
       location: 'On campus',
@@ -188,7 +215,9 @@ export default {
 ```
 
 `entries` are **exactly the same shape as jobs** — modelled as the same type
-rather than duplicated, since they render identically.
+rather than duplicated, since they render identically. `id` is required (the
+schema is shared) but unused here: every leadership entry always shows, in
+file order, with no per-variant selection.
 
 | Field            | Type       | Rules                     |
 | ---------------- | ---------- | ------------------------- |
@@ -261,9 +290,11 @@ export default {
 | `coursework` | `string`       | may be empty; overrides `education.ts` when non-empty |
 | `skills`     | `SkillGroup[]` | may be empty; `{ label, body }`, both non-empty       |
 | `projectIds` | `string[]`     | **at least one**; each must exist in `projects.ts`    |
+| `jobIds`     | `string[]?`    | optional; each must exist in `work.ts`; omit for every job |
 
-An unknown project id is `UNKNOWN_PROJECT`, and **every** unknown id in a
-variant is reported in one run rather than one per rebuild.
+An unknown project id is `UNKNOWN_PROJECT`, an unknown job id is `UNKNOWN_JOB`,
+and **every** unknown id in a variant — of either kind, in the same run — is
+reported at once rather than one per rebuild.
 
 `summary` is **absent entirely**, not an empty string, when a resume shouldn't
 have a Summary section — delete the line rather than setting `summary: ''`.
@@ -318,7 +349,8 @@ never reorders anything, and neither does a variant:
 3. **Education** — institution (location right-aligned), degree with GPA
    folded in if present (date right-aligned), then coursework
 4. **Skills** — one line per group: bold label, then body
-5. **Experience** — every job from `work.ts`
+5. **Experience** — jobs from `work.ts`, all of them unless the variant sets
+   `jobIds`
 6. **Projects** — the variant's `projectIds`, in order
 7. **Leadership & Awards** — leadership entries, then the awards line
 
