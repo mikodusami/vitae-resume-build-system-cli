@@ -1,3 +1,127 @@
+# vitae — Layer 2: Workspace & Content Loading
+
+**Goal:** implement the `ContentRepository` port from Layer 1. Find the `.vitae/` folder, load the user's TypeScript content and variant files at runtime, validate them at the boundary, and produce a `ContentLibrary` — or a readable list of diagnostics explaining why not.
+
+**Depends on:** Layer 1 (`src/domain/`) only.
+
+**Out of scope:** docx, theme, rendering, CLI commands, archiving, PDF. This layer's job ends the moment a valid `ContentLibrary` exists in memory.
+
+---
+
+## Architectural decisions being locked in
+
+**1. This is the anti-corruption layer.** Everything crossing into the process from disk is untrusted — a user typo, a stale field name, a half-finished edit. Nothing reaches the domain until it has been shaped and verified here. The payoff is that Layer 1 code can assume its inputs are well-formed and never defensively re-check.
+
+**2. Zod lives in infra, never in domain.** Domain types stay hand-written and canonical; zod schemas here are _adapters_ that produce them. Bind each schema to its domain type explicitly:
+
+```ts
+const projectSchema: z.ZodType<Project> = z.object({ ... });
+```
+
+Typing the schema as `z.ZodType<Project>` rather than inferring the type from the schema means that if someone adds a field to the domain `Project` and forgets the schema, **the build breaks** — the drift is caught by the compiler instead of at runtime by a confused user. This is the inverse of the usual `z.infer` habit and it's deliberate: the domain leads, the boundary follows.
+
+**3. Convention over manifest.** Any `.ts` file in `variants/` is a variant; its filename is its ID unless the file says otherwise. Adding a variant is dropping in a file — no registry to update, no import list to maintain. Same principle as your content: composition is data.
+
+**4. `Workspace` is a first-class object, not a path string.** Once resolved, a `Workspace` instance answers every "where does X live" question for the rest of the application — content dir, variants dir, dist, archive, theme file, config file. Later layers (rendering output, archiving, `init`) ask the workspace instead of re-deriving paths, so the folder convention exists in exactly one place and can be changed there.
+
+**5. Module loading is a port; the filesystem isn't.** Executing user TypeScript at runtime is the genuinely awkward-to-test part, so it goes behind a `ModuleLoader` interface with a jiti-backed implementation and a fake for tests. Plain file reads are tested against real temp directories — abstracting `fs` too would be ceremony without payoff. Abstract what's hard to fake, not everything.
+
+**6. Diagnostics aggregate and carry provenance.** A load failure returns _all_ problems, each naming the file and the path within it (`variants/data-engineer.ts: skills[2].label — expected string, received number`). Errors extend Layer 1's `DomainError` so the CLI has one uniform formatting path for domain and load failures alike.
+
+**7. Load once, hold immutably.** Content is read a single time per process into an immutable `ContentLibrary`. No lazy per-command re-reads, no cache invalidation logic to get wrong.
+
+---
+
+## Deliverables
+
+### 2.1 — `Workspace` (`src/infra/workspace/Workspace.ts`)
+
+A class representing a resolved `.vitae/` directory.
+
+```ts
+class Workspace {
+  static resolve(opts?: {
+    explicitDir?: string;
+    cwd?: string;
+  }): Result<Workspace, WorkspaceNotFoundError>;
+  readonly root: string; // path to .vitae/
+  get contentDir(): string;
+  get variantsDir(): string;
+  get distDir(): string;
+  get archiveDir(): string;
+  get themeFile(): string; // path only — L3 reads it
+  get configFile(): string;
+  resolvePath(...segments: string[]): string;
+}
+```
+
+Resolution order: explicit `--dir` / `VITAE_DIR` env → walk up from `cwd` looking for `.vitae/` (stop at filesystem root) → fall back to `~/.vitae` → otherwise `WorkspaceNotFoundError` with a message telling the user to run `vitae init`. Directory existence is verified; `dist/` and `archive/` are created on demand by later layers, not here.
+
+### 2.2 — Config (`src/infra/config/`)
+
+`config.json` schema and loader: `owner` (string), `defaultVariant` (optional string), `output` (optional `{ filenamePrefix?: string }`). Missing file is not an error — apply documented defaults, with `owner` falling back to the header's name from content. Validate with zod; unknown keys warn rather than fail, so a config written by a newer version of the tool doesn't hard-break an older one.
+
+### 2.3 — `ModuleLoader` port + jiti adapter (`src/infra/loader/`)
+
+```ts
+interface ModuleLoader {
+  load<T = unknown>(absPath: string): Promise<Result<T, ModuleLoadError>>;
+}
+```
+
+`JitiModuleLoader` wraps jiti configured for ESM + TypeScript with caching disabled during development. It must: accept both `.ts` and `.js`, prefer a default export and fall back to a single named export, and convert thrown syntax/runtime errors from user code into a `ModuleLoadError` carrying the file path and the original message — never let a user's typo surface as a raw stack trace from inside jiti.
+
+Also ship `FakeModuleLoader` (a `Map<path, value>`) for tests.
+
+### 2.4 — Boundary schemas (`src/infra/schema/`)
+
+Zod schemas for every domain type from Layer 1, each explicitly typed as `z.ZodType<DomainType>` per decision 2. Cover: `Header`, `Education`, `Job`, `Project`, `LeadershipEntry`, `AwardsLine`, `Claim`, `SkillGroup`, `Variant`, and the `ContentLibraryData` aggregate.
+
+Add the semantic constraints the domain assumes but doesn't police: non-empty `id` strings, at least one bullet per job, `defensibility` as a strict enum, `projectIds` non-empty. Reject unknown object keys (`.strict()`) — a mistyped `bullet:` that silently vanishes is worse than a loud failure.
+
+### 2.5 — `ZodDiagnosticMapper` (`src/infra/schema/mapper.ts`)
+
+Converts a `ZodError` into `LoadDiagnostic[]` with file path, dotted field path, expected vs. received, and a stable error code. One mapper reused everywhere means every validation message in the tool reads the same way.
+
+### 2.6 — `FileContentRepository` (`src/infra/content/FileContentRepository.ts`)
+
+The `ContentRepository` implementation, constructor-injected with `Workspace` and `ModuleLoader`.
+
+`load()` sequence: read each expected file in `content/` (`header`, `education`, `work`, `projects`, `leadership`, `claims`) → discover and read every `.ts` in `variants/` → validate each through its schema, collecting diagnostics rather than stopping → if any errors, return them all → otherwise construct `ContentLibrary` and return it.
+
+Two rules worth stating explicitly: a missing _required_ content file is an error naming the expected path, and a variant file whose declared `id` disagrees with its filename is an error, not a silent preference — ambiguity about which name wins will cost you an hour someday.
+
+Note that `ContentLibrary`'s own duplicate-ID checks from Layer 1 still run at construction; this layer should surface those as load diagnostics rather than letting them throw.
+
+### 2.7 — Error types (`src/infra/errors.ts`)
+
+`WorkspaceNotFoundError`, `ModuleLoadError`, `SchemaValidationError`, `MissingContentFileError`, `VariantIdMismatchError` — all extending `DomainError` with distinct codes.
+
+### 2.8 — Tests (`tests/infra/`)
+
+- **Workspace resolution:** finds `.vitae/` in cwd; finds it three levels up; honors explicit dir; falls back to home; fails with a clear error when absent. Use real temp directories.
+- **Loading:** a complete valid fixture workspace produces a `ContentLibrary` whose contents match expectations.
+- **Validation:** a variant with a numeric `label` reports a diagnostic naming the file and field; **two** bad files report **both** (proves aggregation).
+- **Unknown keys** rejected; **missing required file** reported by path; **id/filename mismatch** reported.
+- **`ModuleLoader`:** user code that throws produces a `ModuleLoadError` with the path, not an unhandled exception. Use `FakeModuleLoader` for this.
+- Reuse the Layer 1 fixture builder so domain and infra tests describe the same content.
+
+Build a small `tests/fixtures/workspace/` that is a genuine, valid `.vitae/` folder — it doubles as the seed for `vitae init` templates in Layer 5.
+
+---
+
+## Definition of done
+
+Given a real `.vitae/` folder on disk, `new FileContentRepository(workspace, loader).load()` returns a populated `ContentLibrary`, and given a broken one it returns a diagnostic list a human can act on without opening the tool's source. `src/domain/` is untouched by this layer's work. `npm run lint` still passes, meaning the boundary rule held.
+
+## Handoff note for Codex
+
+The failure mode to avoid is letting zod infer the domain types (`z.infer<typeof projectSchema>`) — schemas must be declared as `z.ZodType<Project>` so the domain stays the source of truth and drift becomes a compile error. Second: no error path may surface a raw jiti or zod stack trace to the user; everything funnels through `LoadDiagnostic`.
+
+## What Layer 3 will need from this
+
+The rendering layer takes `Workspace` (for `themeFile` and `distDir`) and a `ResumeDocument` from the domain composer. It will define and load the theme itself — theme is presentational, so its type and schema deliberately do not exist yet.
+
 # vitae — Layer 1: Domain Core
 
 **Goal:** the pure heart of the application — the resume model, composition rules, and validation policy — with zero I/O and zero knowledge of docx, the filesystem, or the CLI. Everything in later layers depends on this; this depends on nothing.
