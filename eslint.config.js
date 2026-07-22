@@ -63,7 +63,8 @@ export default tseslint.config(
     },
   },
   {
-    // The application layer orchestrates; it knows domain, never infra or cli.
+    // The application layer orchestrates use cases. It may know the domain and
+    // the renderers, but never concrete I/O adapters and never the terminal.
     files: ['src/app/**/*.ts'],
     rules: {
       'no-restricted-imports': [
@@ -72,15 +73,40 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/infra/**', '**/cli/**'],
-              message: 'app/ may not import from infra or cli.',
+              message:
+                'app/ may not import concrete adapters (infra) or the CLI. ' +
+                'Depend on a port and let the composition root inject it.',
+            },
+            {
+              group: [...NODE_BUILTIN_PATTERNS, 'docx', 'chalk', 'commander'],
+              message: 'app/ must stay free of I/O, rendering libraries, and terminal concerns.',
             },
           ],
+        },
+      ],
+      // Use cases return reports; Layer 5 decides how to display them and what
+      // exit code they imply. This is the rule most likely to be violated under
+      // deadline pressure, so it is enforced rather than merely agreed.
+      'no-console': 'error',
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'process',
+          property: 'exit',
+          message: 'app/ never exits — return a report and let the CLI choose the exit code.',
+        },
+        {
+          object: 'process',
+          property: 'stdout',
+          message: 'app/ never writes to stdout — return a report instead.',
         },
       ],
     },
   },
   {
-    // Adapters implement domain ports; they must not reach sideways into cli.
+    // Adapters implement ports declared by domain/ and app/, so importing a
+    // port from app/ is expected here — the dependency that must never exist
+    // is the reverse one, and that is forbidden in the app block above.
     files: ['src/infra/**/*.ts'],
     rules: {
       'no-restricted-imports': [
