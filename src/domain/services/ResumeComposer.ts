@@ -75,9 +75,19 @@ export class ResumeComposer {
       return err(projects.error);
     }
 
+    const summarySection: Section[] =
+      variant.summary === undefined
+        ? []
+        : [
+            {
+              heading: SECTION_HEADINGS.summary,
+              blocks: [paragraph([run(variant.summary, 'body')])],
+            },
+          ];
+
     const sections: Section[] = [
       { blocks: composeHeaderBlocks(library.header) },
-      { heading: SECTION_HEADINGS.summary, blocks: [paragraph([run(variant.summary, 'body')])] },
+      ...summarySection,
       {
         heading: SECTION_HEADINGS.education,
         blocks: composeEducationBlocks(library.education, variant),
@@ -133,7 +143,7 @@ function composeMeta(header: Header, variant: Variant): DocumentMeta {
   return {
     title: `${header.name} — ${variant.label}`,
     creator: header.name,
-    description: variant.summary,
+    description: variant.summary ?? '',
     keywords: deriveKeywords(variant.skills),
   };
 }
