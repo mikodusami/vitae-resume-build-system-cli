@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { DOMAIN_ERROR_CODES } from '../../src/domain/errors/domainError.js';
 import { ResumeComposer, SECTION_HEADINGS } from '../../src/domain/services/ResumeComposer.js';
 import type { ResumeDocument } from '../../src/domain/document/resumeDocument.js';
-import { makeEducation, makeHeader, makeLibrary, makeProject, makeVariant } from './fixtures.js';
+import {
+  makeEducation,
+  makeHeader,
+  makeJob,
+  makeLibrary,
+  makeProject,
+  makeVariant,
+} from './fixtures.js';
 
 /** Composes, failing the test loudly if composition was expected to succeed. */
 function composeOrThrow(variantOverrides = {}): ResumeDocument {
@@ -241,6 +248,69 @@ describe('ResumeComposer', () => {
     });
 
     expect(doc.meta.keywords).toEqual(['TypeScript', 'Python', 'Airflow']);
+  });
+
+  it('shows every job, in file order, when a variant sets no jobIds', () => {
+    const doc = composeOrThrow();
+
+    const work = doc.sections.find((s) => s.heading === SECTION_HEADINGS.work);
+    // The fixture library has one job ('ra'); its title is the first run of
+    // the section's first (splitLine) block.
+    const titleLine = work?.blocks[0];
+    expect(titleLine?.kind).toBe('splitLine');
+    if (titleLine?.kind !== 'splitLine') return;
+    expect(titleLine.left[0]?.text).toBe('Research Assistant');
+  });
+
+  it('selects and orders jobs from jobIds when a variant sets them', () => {
+    const library = makeLibrary({
+      jobs: [
+        makeJob('first', { title: 'First Job' }),
+        makeJob('second', { title: 'Second Job' }),
+      ],
+    });
+    const result = new ResumeComposer().compose(
+      makeVariant('v', { jobIds: ['second', 'first'] }),
+      library,
+    );
+    if (!result.ok) throw new Error(result.error.map((e) => e.message).join('; '));
+
+    const work = result.value.sections.find((s) => s.heading === SECTION_HEADINGS.work);
+    // 'second' before 'first' — jobIds order wins over work.ts file order.
+    const titles = (work?.blocks ?? [])
+      .filter((b) => b.kind === 'splitLine')
+      .map((b) => (b.kind === 'splitLine' ? b.left[0]?.text : undefined));
+    expect(titles).toEqual(['Second Job', 'First Job']);
+  });
+
+  it('reports an unknown job id, naming the id', () => {
+    const library = makeLibrary();
+
+    const result = new ResumeComposer().compose(
+      makeVariant('v', { jobIds: ['ra', 'ghost'] }),
+      library,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toHaveLength(1);
+    expect(result.error[0]?.code).toBe(DOMAIN_ERROR_CODES.unknownJob);
+    expect(result.error[0]?.message).toContain('ghost');
+  });
+
+  it('accumulates unknown project ids and unknown job ids from the same run', () => {
+    const library = makeLibrary();
+
+    const result = new ResumeComposer().compose(
+      makeVariant('v', { projectIds: ['ghost-project'], jobIds: ['ghost-job'] }),
+      library,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const codes = result.error.map((e) => e.code);
+    expect(codes).toContain(DOMAIN_ERROR_CODES.unknownProject);
+    expect(codes).toContain(DOMAIN_ERROR_CODES.unknownJob);
   });
 
   it('reports an unknown project id, naming the id', () => {
