@@ -1,155 +1,165 @@
 # vitae
 
 A TypeScript CLI that builds resume variants as `.docx` files from typed
-content. The tool knows about _formats_; your actual resume content lives in a
-local `.vitae/` folder it discovers and reads — the same split as `git` (one
-installed tool, one repo per project).
+content — and refuses to build one containing a claim you can't defend.
 
-Full design: [systemdesign.archiecture.md](systemdesign.archiecture.md).
-Build order: [layers.md](layers.md).
+The tool knows about _formats_. Your actual resume lives in a `.vitae/` folder
+it discovers, the same way `git` is installed once and `.git/` is per-project.
 
-## Status
+```bash
+npm i -g .        # or: npm run link
+mkdir my-resume && cd my-resume
+vitae init
+vitae build --all
+```
 
-**Layer 1 (Domain Core) — built.** The pure heart of the application: the
-content model, the composition engine, the claims policy, and the
-rendering-agnostic document IR. No filesystem, no docx, no CLI yet — those are
-later layers, and the domain is deliberately unable to reach them.
+That produces four `.docx` files in `.vitae/dist/`, built from an example
+resume you then replace with your own.
 
-**Layer 4 (Application Services) — built.** `vitae build` works end to end:
-resolve workspace → load content → compose → validate claims → render → write
-to `dist/`. An undefendable claim blocks the write; `--force` overrides it.
+## Why this exists
 
-| Layer                     | State                                        |
-| ------------------------- | -------------------------------------------- |
-| 1 — Domain core           | ✅ built                                     |
-| 2 — Workspace & loading   | ✅ built                                     |
-| 3 — Theme & rendering     | ✅ built                                     |
-| 4 — Application services  | ✅ built                                     |
-| CLI                       | ✅ `where/build/list/demo/text/check/prep`   |
-| 5 — CLI polish & `init`   | not started                                  |
-| 6+ — archive, diff, PDF   | not started                                  |
+Three problems with keeping resumes in Word:
 
-## Getting started
+- **You can't diff them.** Content here is TypeScript, so `git diff` shows
+  exactly which bullet changed between the version you sent in March and the
+  one you sent in June.
+- **Variants drift.** A variant holds ordered project _ids_, never project
+  text. Fix a bullet once and every resume showing it is fixed.
+- **You can end up unable to defend what you sent.** That is what the claims
+  registry is for — see below.
+
+## Commands
+
+| Command                 | What it does                                              |
+| ----------------------- | --------------------------------------------------------- |
+| `vitae init [dir]`      | scaffold a `.vitae/` workspace with an example resume      |
+| `vitae build <variant>` | render and write to `dist/`; `--all`, `--force`, `--format`|
+| `vitae check [variant]` | validate claims and composition, writing nothing           |
+| `vitae list`            | variants, their projects, and defensibility status         |
+| `vitae prep <variant>`  | interview checklist from that variant's review notes       |
+| `vitae text <variant>`  | print an ATS-safe plain-text version                       |
+| `vitae where`           | which workspace resolved, and by which rule                |
+
+Global options: `--dir <path>`, `--json`, `--no-color`, `--verbose`.
+
+**Exit codes** are meaningful, so CI can act on them: `0` success, `1` broken
+(bad content, I/O failure, unknown variant), `2` blocked by the claims policy.
+
+## The claims registry
+
+This is the part with no equivalent in other resume tools, and the reason the
+project exists.
+
+Every project carries a tier in `content/claims.ts` saying how well you could
+defend it in an interview **today**:
+
+| Tier            | Effect                                                          |
+| --------------- | --------------------------------------------------------------- |
+| `confident`     | builds silently — you can explain every line of it               |
+| `needs-review`  | builds with a warning, and `vitae prep` turns its notes into a checklist |
+| `cannot-defend` | **`vitae build` refuses to write a resume containing it**       |
+
+```ts
+{
+  id: 'tempo',
+  defensibility: 'needs-review',
+  reviewNotes: [
+    'Reread the retry path; sketch what happens when a worker dies mid-job',
+    'Know why at-least-once was the right trade, and what at-most-once would cost',
+  ],
+}
+```
+
+Because the checklist is generated from the claims of the variant you are
+actually sending, it can never drift from what the recruiter is reading. When
+you have genuinely reviewed something, flipping it to `confident` is a one-line
+commit — and a dated record of when it became interview-safe.
+
+Two framings of the same work (a general version and a governance-focused one)
+are separate projects sharing a `claimId`, so the honesty layer treats them as
+one thing you have to be able to defend.
+
+## Workspace layout
+
+```
+.vitae/
+├── config.json        owner, default variant, filename prefix
+├── theme.ts           fonts, sizes, spacing — everything presentational
+├── content/
+│   ├── header.ts        name + contact line
+│   ├── education.ts     degree, date, default coursework
+│   ├── work.ts          job history, shared across variants
+│   ├── projects.ts      every project, referenced by id
+│   ├── leadership.ts    leadership entries + the awards line
+│   └── claims.ts        the defensibility registry
+├── variants/          one file per resume; the filename is its id
+└── dist/              latest builds (gitignored)
+```
+
+Adding a resume means dropping a file in `variants/` — there is no registry to
+update. Its `id` must match its filename; a mismatch is an error rather than a
+silent guess.
+
+Content is loaded at runtime through `jiti`, so there is no build step inside
+`.vitae/`: edit a bullet, run the command. Every file is validated against a
+schema on the way in, so a mistake reads like
+`variants/backend.ts: skills[2].label — expected string, received number`
+rather than a stack trace.
+
+**Workspace discovery** searches up from the current directory (like `git`),
+then falls back to `~/.vitae`. `--dir` or `VITAE_DIR` overrides it, and
+`vitae where` tells you which rule matched.
+
+## Development
 
 ```bash
 npm install
 npm run typecheck && npm run lint && npm test
+npm run link          # build, then expose `vitae` globally
 ```
 
-Then install the `vitae` command globally:
+Verification flows for every layer are in [userflows.md](userflows.md); the
+reasoning behind each design choice is in [decisions.md](decisions.md).
 
-```bash
-npm run link
-```
+### Architecture
 
-That builds `src/` to `dist/` and links the `bin` entry, so `vitae` works from
-any directory. `npm run unlink` removes it.
-
-```bash
-vitae --help          # what exists now, and what is still planned
-vitae where           # which .vitae/ folder resolved, and its paths
-vitae build <variant> # render and write to dist/; --all, --force, --format txt
-vitae list            # variants, projects, defensibility status
-vitae demo            # compose a variant and print its document outline
-vitae text            # render a variant as plain text (ATS-safe); --width N
-vitae check           # claims gate; exits 1 if a claim cannot be defended
-vitae prep            # interview checklist from that variant's review notes
-```
-
-Content is read from the nearest `.vitae/` folder, searching up from the
-current directory the way `git` finds `.git/`, then falling back to `~/.vitae`.
-`--dir <path>` or `VITAE_DIR` overrides discovery. With no workspace anywhere,
-commands fall back to built-in sample content and say so — but a workspace that
-*exists and fails to load* is a hard error, never a silent fallback.
-
-`tests/fixtures/workspace/` is a complete, valid workspace you can try it
-against:
-
-```bash
-vitae list --dir tests/fixtures/workspace/.vitae
-```
-
-`init` and `diff` exit 2 with a message naming the layer that will deliver them
-rather than pretending to work.
-
-`vitae build` needs a real workspace — unlike the read-only commands, there is
-nowhere sensible to write artifacts for content compiled into the tool:
-
-```bash
-cd tests/fixtures/workspace && vitae build --all
-```
-
-There is also a runnable script covering the same ground without installing:
-
-```bash
-npx vite-node examples/composeDemo.ts
-```
-
-Step-by-step verification flows live in [userflows.md](userflows.md).
-
-## Architecture
-
-Clean/Hexagonal layering; imports may only point inward.
+Clean/Hexagonal. Imports point inward only, and that rule is enforced by ESLint
+rather than by discipline — `domain/` cannot import `fs` or `docx` without
+failing `npm run lint`.
 
 ```
 src/
-├── domain/     # content model, document IR, composition, claims policy, ports
-│   ├── model/       ContentLibrary + content types
-│   ├── document/    ResumeDocument — the semantic, presentation-free IR
-│   ├── services/    ResumeComposer, ClaimsResolver, ClaimsPolicy
-│   ├── ports/       ContentRepository, Renderer<T> (interfaces only)
-│   ├── errors/      DomainError hierarchy with stable codes
-│   └── primitives/  Result<T, E>
-├── app/        # use cases: orchestration, and what blocks a build
-│   ├── usecases/    one class per thing a user can do
-│   ├── reports/     plain data returned instead of printing
-│   ├── ports/       ArtifactWriter, ProgressListener, WorkspacePaths
-│   └── naming/      filename policy, shared with the future archive naming
-├── infra/      # the anti-corruption layer: nothing untrusted reaches domain/
-│   ├── workspace/   Workspace — every "where does X live" answer
-│   ├── loader/      ModuleLoader port, jiti adapter, in-memory fake
-│   ├── schema/      zod schemas bound to domain types + diagnostic mapper
-│   ├── config/      config.json, with defaults and forward compatibility
-│   └── content/     FileContentRepository — the ContentRepository port
-├── render/     # everything presentational — fonts, sizes, spacing, margins
-│   ├── theme/       Theme, DEFAULT_THEME, ThemeLoader (merges over defaults)
-│   ├── docx/        StyleResolver, block registry, DocxRenderer
-│   └── text/        PlainTextRenderer — takes no theme, by design
-└── cli/        # command dispatch + built-in sample content
-    ├── main.ts       argv dispatch, exit codes, usage
-    └── commands/     where, demo, text, list, check, prep
+├── domain/     content model, document IR, composition, claims policy, ports
+├── infra/      the anti-corruption layer: workspace, loading, schemas, I/O
+├── render/     everything presentational: theme, docx renderer, plain text
+├── app/        use cases, reports, and what blocks a build
+└── cli/        argv, composition root, presenters, exit codes, templates
 ```
 
-Four load-bearing ideas, recorded in [decisions.md](decisions.md):
+Five ideas carry most of the weight:
 
-- **The domain's product is a semantic IR**, not a document. `ResumeDocument`
-  says a run of text is a `name` or a `link`; it never says 14pt Calibri. New
-  output formats are new adapters, not domain changes.
-- **Errors are values.** Operations return `Result<T, E>` and _accumulate_ —
-  three bad project IDs give three errors in one run.
-- **Composition is independent of validation.** `compose` never refuses to
-  build over an undefendable claim; a later layer decides whether that blocks
-  writing a file.
-- **The dependency rule is enforced by ESLint**, not by discipline — `domain/`
-  cannot import `fs`, `docx`, or a sibling layer without failing `npm run lint`.
+- **The domain's product is a semantic IR**, not a document. It says a run of
+  text is a `name` or a `link`, never 14pt Calibri. New output formats are new
+  adapters, not domain changes.
+- **Errors are values that accumulate.** Three bad project IDs give three
+  errors in one run, not three build attempts.
 - **Schemas are bound to domain types, not inferred from them.** Every zod
   schema is annotated `z.ZodType<DomainType>`, so adding a field to the domain
-  and forgetting the schema breaks the build instead of confusing a user at
-  runtime. The domain leads; the boundary follows.
-- **Two renderers ship, on purpose.** `PlainTextRenderer` takes no theme at
-  all. If the IR ever quietly becomes docx-shaped, that renderer breaks
-  immediately — while the design is still cheap to fix.
+  and forgetting the schema breaks the build instead of confusing a user.
+- **Two renderers ship on purpose.** `PlainTextRenderer` takes no theme at all;
+  if the IR ever quietly becomes docx-shaped, it breaks immediately.
 - **The app layer never prints and never exits.** Use cases return reports; the
-  CLI turns them into output and exit codes. Enforced by ESLint, so it cannot
-  quietly erode under deadline pressure.
+  CLI turns them into output and exit codes.
 
-## Scripts
+## Status
 
-| Script              | Purpose                                     |
-| ------------------- | ------------------------------------------- |
-| `npm run typecheck` | `tsc --noEmit` under strict settings        |
-| `npm run lint`      | ESLint, including layer-boundary rules      |
-| `npm test`          | Vitest, in-memory fixtures, zero filesystem |
-| `npm run build`     | Emits `src/` to `dist/`                     |
-| `npm run link`      | Builds, then `npm link`s the `vitae` binary |
-| `npm run unlink`    | Removes the global `vitae` binary           |
+| Layer                    | State       |
+| ------------------------ | ----------- |
+| 1 — Domain core          | ✅ built    |
+| 2 — Workspace & loading  | ✅ built    |
+| 3 — Theme & rendering    | ✅ built    |
+| 4 — Application services | ✅ built    |
+| 5 — CLI & scaffolding    | ✅ built    |
+| 6 — archive, diff, PDF   | not started |
+
+`diff` and `--archive`/`--pdf` are not implemented yet.
