@@ -14,6 +14,8 @@ import { EXIT_CODES, exitCodeForCheck, type ExitCode } from '../exitCodes.js';
 /** Arguments specific to `check`. */
 export interface CheckArgs {
   readonly variantId: string | undefined;
+  /** Render each variant and enforce the page limit. */
+  readonly pages?: boolean | undefined;
 }
 
 /**
@@ -31,7 +33,10 @@ export async function runCheck(context: CommandContext, args: CheckArgs): Promis
 
   announceWorkspace(context, wired.value.workspaceRoot, wired.value.warnings);
 
-  const result = await wired.value.app.check({ variantId: args.variantId });
+  const result = await wired.value.app.check({
+    variantId: args.variantId,
+    pages: args.pages,
+  });
   if (!result.ok) {
     context.output.err(context.presenter.diagnostics(result.error.map(toDiagnostic)));
     return EXIT_CODES.failure;

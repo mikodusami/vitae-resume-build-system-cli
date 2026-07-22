@@ -6,7 +6,14 @@
  * only thing this presenter exists for.
  */
 
-import type { BuildReport, CheckReport, ListReport } from '../../app/index.js';
+import type {
+  BuildReport,
+  CheckReport,
+  DiffReport,
+  DoctorReport,
+  ListReport,
+  PrepReport,
+} from '../../app/index.js';
 import type { Diagnostic } from '../../domain/index.js';
 import type { ReportPresenter } from './ReportPresenter.js';
 
@@ -34,6 +41,18 @@ export class JsonPresenter implements ReportPresenter {
   }
 
   public list(report: ListReport): string {
+    return serialize(report);
+  }
+
+  public prep(report: PrepReport): string {
+    return serialize(report);
+  }
+
+  public diff(report: DiffReport): string {
+    return serialize(report);
+  }
+
+  public doctor(report: DoctorReport): string {
     return serialize(report);
   }
 

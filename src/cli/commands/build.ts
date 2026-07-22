@@ -18,6 +18,10 @@ export interface BuildArgs {
   readonly format: OutputFormat;
   readonly force: boolean;
   readonly outputDir: string | undefined;
+  /** Also write a dated, hash-stamped copy to `archive/`. */
+  readonly archive?: boolean | undefined;
+  /** Also convert to PDF, when LibreOffice is available. */
+  readonly pdf?: boolean | undefined;
 }
 
 /**
@@ -42,7 +46,13 @@ export async function runBuild(context: CommandContext, args: BuildArgs): Promis
     return EXIT_CODES.failure;
   }
 
-  const input = { format: args.format, force: args.force, outputDir: args.outputDir };
+  const input = {
+    format: args.format,
+    force: args.force,
+    outputDir: args.outputDir,
+    archive: args.archive,
+    pdf: args.pdf,
+  };
   const result = args.all
     ? await wired.value.app.buildAll(input)
     : await wired.value.app.build({ ...input, variantId: variantId as string });

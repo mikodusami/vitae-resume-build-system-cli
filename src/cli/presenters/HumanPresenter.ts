@@ -9,7 +9,10 @@
 import type {
   BuildReport,
   CheckReport,
+  DiffReport,
+  DoctorReport,
   ListReport,
+  PrepReport,
   VariantBuildReport,
   VariantSummary,
 } from '../../app/index.js';
@@ -22,6 +25,13 @@ const STATUS_MARKERS = {
   written: '✓',
   blocked: '✗',
   failed: '!',
+} as const;
+
+/** Section headings for the prep checklist, ordered most urgent first. */
+const TIER_HEADINGS = {
+  'cannot-defend': 'Cannot defend — do not send this until resolved',
+  'needs-review': 'Needs review before sending',
+  confident: 'Confident — listed for completeness',
 } as const;
 
 /** Tier markers for the list view. */
@@ -92,6 +102,93 @@ export class HumanPresenter implements ReportPresenter {
     return report.variants.map((variant) => this.listEntry(variant)).join('\n\n');
   }
 
+  /**
+   * Renders the prep checklist as markdown.
+   *
+   * Markdown rather than terminal decoration because this output is meant to
+   * be saved and worked through — `--out prep.md`, then tick the boxes. It is
+   * identical whether it lands in a file or a terminal, so what you read is
+   * what you keep.
+   */
+  public prep(report: PrepReport): string {
+    if (report.diagnostics.length > 0) {
+      return this.diagnostics(report.diagnostics);
+    }
+
+    const lines = [
+      `# Interview prep — ${report.label}`,
+      '',
+      `Generated ${report.generatedAt.slice(0, 10)} for variant \`${report.variantId}\`.`,
+      '',
+    ];
+
+    for (const section of report.sections) {
+      lines.push(`## ${TIER_HEADINGS[section.tier]}`, '');
+
+      for (const entry of section.entries) {
+        lines.push(`### ${entry.projectNames.join(', ')}`, '');
+
+        if (entry.notes.length === 0) {
+          lines.push('_No review notes._', '');
+          continue;
+        }
+
+        lines.push(...entry.notes.map((note) => `- [ ] ${note}`), '');
+      }
+    }
+
+    if (report.sections.length === 0) {
+      lines.push('_This variant has no claims._');
+    }
+
+    return lines.join('\n').trimEnd();
+  }
+
+  public diff(report: DiffReport): string {
+    if (report.diagnostics.length > 0) {
+      return this.diagnostics(report.diagnostics);
+    }
+
+    if (report.patch.trim().length === 0) {
+      return (
+        `No changes to ${report.variantId}'s content since ${report.ref}.\n` +
+        this.color.muted(`  compared: ${report.paths.join(', ')}`)
+      );
+    }
+
+    // The patch is git's own output; reprinting it verbatim means it stays
+    // pipeable into `git apply` or a pager.
+    return report.patch;
+  }
+
+  public doctor(report: DoctorReport): string {
+    const lines = [
+      this.color.heading('workspace'),
+      `  ${this.color.path(report.workspaceRoot)}`,
+      `  ${report.variantCount} variant(s)`,
+      `  git repository: ${report.isGitRepository ? 'yes' : 'no'}`,
+      '',
+      this.color.heading('capabilities'),
+    ];
+
+    for (const capability of report.capabilities) {
+      const marker = capability.available
+        ? this.color.success('✓')
+        : this.color.warning('○');
+      const version = capability.version === undefined ? '' : ` ${this.color.muted(capability.version)}`;
+      lines.push(`  ${marker} ${capability.name}${version}`);
+      lines.push(`      ${this.color.muted(capability.note)}`);
+    }
+
+    if (report.diagnostics.length > 0) {
+      lines.push('', this.color.heading('content'), this.diagnostics(report.diagnostics));
+    } else {
+      lines.push('', this.color.success('Content loads cleanly.'));
+    }
+
+    return lines.join('\n');
+  }
+
   public diagnostics(diagnostics: readonly Diagnostic[]): string {
     if (diagnostics.length === 0) {
       return '';
@@ -119,7 +216,20 @@ export class HumanPresenter implements ReportPresenter {
           )} ${this.color.muted(`(${variant.byteLength ?? 0} bytes)`)}`
         : `${this.color.error(STATUS_MARKERS[variant.status])} ${id}  ${variant.status}`;
 
-    return [headline, ...variant.diagnostics.map((diagnostic) => this.diagnosticLine(diagnostic))];
+    const extras: string[] = [];
+    if (variant.archivePath !== undefined) {
+      const verb = variant.archiveSkipped === true ? 'already archived' : 'archived';
+      extras.push(`    ${verb}: ${this.color.path(variant.archivePath)}`);
+    }
+    if (variant.pdfPath !== undefined) {
+      extras.push(`    pdf: ${this.color.path(variant.pdfPath)}`);
+    }
+
+    return [
+      headline,
+      ...extras,
+      ...variant.diagnostics.map((diagnostic) => this.diagnosticLine(diagnostic)),
+    ];
   }
 
   /** One variant's summary: projects with their tier shown inline. */

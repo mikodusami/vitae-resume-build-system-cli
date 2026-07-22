@@ -18,6 +18,8 @@ import { Command } from 'commander';
 import { RendererFactory, type OutputFormat } from '../app/index.js';
 import { runBuild } from './commands/build.js';
 import { runCheck } from './commands/check.js';
+import { runDiff } from './commands/diff.js';
+import { runDoctor } from './commands/doctor.js';
 import { runInit } from './commands/init.js';
 import { runList } from './commands/list.js';
 import { runPrep } from './commands/prep.js';
@@ -108,10 +110,19 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
     .option('--format <format>', 'docx or txt', 'docx')
     .option('--force', 'build even when a claim cannot be defended')
     .option('--out <dir>', 'write here instead of the workspace dist/')
+    .option('--archive', 'also write a dated, hash-stamped copy to archive/')
+    .option('--pdf', 'also convert to PDF (requires LibreOffice)')
     .action(
       async (
         variant: string | undefined,
-        options: { all?: boolean; format?: string; force?: boolean; out?: string },
+        options: {
+          all?: boolean;
+          format?: string;
+          force?: boolean;
+          out?: string;
+          archive?: boolean;
+          pdf?: boolean;
+        },
       ) => {
         const format = options.format ?? 'docx';
         if (!RendererFactory.isSupported(format)) {
@@ -127,6 +138,8 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
             format: format satisfies OutputFormat,
             force: options.force === true,
             outputDir: options.out,
+            archive: options.archive === true,
+            pdf: options.pdf === true,
           }),
         );
       },
@@ -136,8 +149,11 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
     .command('check')
     .description('validate claims and composition; writes nothing')
     .argument('[variant]', 'variant id (default: every variant)')
-    .action(async (variant: string | undefined) => {
-      setExitCode(await runCheck(context(), { variantId: variant }));
+    .option('--pages', 'also enforce the page limit (requires LibreOffice)')
+    .action(async (variant: string | undefined, options: { pages?: boolean }) => {
+      setExitCode(
+        await runCheck(context(), { variantId: variant, pages: options.pages === true }),
+      );
     });
 
   program
@@ -156,10 +172,11 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
 
   program
     .command('prep')
-    .description("interview checklist from a variant's review notes")
+    .description("interview checklist from a variant's review notes, as markdown")
     .argument('[variant]', 'variant id (default: config.json defaultVariant)')
-    .action(async (variant: string | undefined) => {
-      setExitCode(await runPrep(context(), { variantId: variant }));
+    .option('--out <file>', 'write the markdown here instead of stdout')
+    .action(async (variant: string | undefined, options: { out?: string }) => {
+      setExitCode(await runPrep(context(), { variantId: variant, outFile: options.out }));
     });
 
   program
@@ -175,6 +192,22 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
           lineWidth: Number.isFinite(width) && width > 0 ? width : undefined,
         }),
       );
+    });
+
+  program
+    .command('diff')
+    .description("what changed in a variant's content since a git ref")
+    .argument('<variant>', 'variant id')
+    .argument('<ref>', 'any git revision: a tag, branch, HEAD~3, or hash')
+    .action(async (variant: string, ref: string) => {
+      setExitCode(await runDiff(context(), { variantId: variant, ref }));
+    });
+
+  program
+    .command('doctor')
+    .description('report what this environment can and cannot do')
+    .action(async () => {
+      setExitCode(await runDoctor(context()));
     });
 
   return program;
