@@ -2,23 +2,25 @@
 /**
  * vitae CLI entry point.
  *
- * Layer 1 built the domain only, so the commands wired up here are the ones
- * the domain can answer on its own — composition and the claims gate — running
- * against built-in sample content. Commands that need the filesystem
- * (`init`, `build`, `where`, `diff`) are listed but refuse to pretend: they
- * exit with a message naming the layer that will implement them.
+ * Commands operate on a real `.vitae/` workspace when one resolves, and fall
+ * back to built-in sample content when none does — always saying which, so you
+ * never wonder whose resume you are looking at. A workspace that exists but
+ * fails to load is a hard error rather than a silent fallback.
+ *
+ * Commands still awaiting their layer (`init`, `build`, `diff`) are listed but
+ * refuse to pretend: they exit naming the layer that will implement them.
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ContentLibrary } from '../domain/index.js';
 import { runCheck } from './commands/check.js';
 import { runDemo } from './commands/demo.js';
 import { runList } from './commands/list.js';
 import { runPrep } from './commands/prep.js';
-import { SAMPLE_CONTENT } from './sampleContent.js';
+import { runWhere } from './commands/where.js';
+import { resolveContent } from './contentSource.js';
 
 /** Exit codes; `usage` is separated from `failure` so scripts can tell them apart. */
 const EXIT = {
@@ -29,30 +31,75 @@ const EXIT = {
 
 /** Commands the design calls for that a later layer will implement. */
 const PLANNED_COMMANDS: Readonly<Record<string, string>> = {
-  init: 'scaffold a .vitae/ folder — arrives with the content layer',
+  init: 'scaffold a .vitae/ folder — arrives with the templates layer',
   build: 'write a .docx — arrives with the rendering layer',
-  where: 'print the resolved .vitae/ folder — arrives with the content layer',
   diff: 'show content changes since a git ref — arrives with the archive layer',
 };
 
 const USAGE = `vitae — build resume variants from typed content
 
-usage: vitae <command> [variant]
+usage: vitae <command> [variant] [--dir <path>]
 
-available now (running against built-in sample content):
-  demo [variant]    compose a variant and print its document outline
+commands:
+  where             print which .vitae/ folder resolved, and its paths
   list              variants, their projects, and defensibility status
-  check [variant]   validate claims; exits 1 if any claim cannot be defended
+  demo [variant]    compose a variant and print its document outline
+  check [variant]   validate claims; exits 1 if a claim cannot be defended
   prep [variant]    interview checklist from that variant's review notes
 
 planned:
-  init, build, where, diff — see layers.md
+  init, build, diff — see layers.md
 
+options:
+  --dir <path>      use this workspace instead of discovering one
   --help, -h        show this message
   --version, -v     print the version
 
-Note: content still comes from a built-in sample. Reading your own .vitae/
-folder arrives in the next layer.`;
+Content is read from the nearest .vitae/ folder (searching up from the current
+directory, then ~/.vitae). VITAE_DIR overrides discovery. With no workspace
+anywhere, commands fall back to built-in sample content and say so.`;
+
+/** Parsed argv: a command, an optional positional, and the flags we accept. */
+interface ParsedArgs {
+  readonly command: string;
+  readonly positional: string | undefined;
+  readonly dir: string | undefined;
+}
+
+/**
+ * Parses argv without a dependency.
+ *
+ * Four commands and one flag do not justify an argument-parsing library; this
+ * is the moment to add one if the surface grows.
+ *
+ * @param argv - arguments after the node executable and script path
+ */
+function parseArgs(argv: readonly string[]): ParsedArgs {
+  let command = '--help';
+  let positional: string | undefined;
+  let dir: string | undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] as string;
+
+    if (argument === '--dir') {
+      dir = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith('--dir=')) {
+      dir = argument.slice('--dir='.length);
+      continue;
+    }
+    if (index === 0) {
+      command = argument;
+      continue;
+    }
+    positional ??= argument;
+  }
+
+  return { command, positional, dir };
+}
 
 /**
  * Reads the package version from disk.
@@ -80,8 +127,8 @@ function readVersion(): string {
  * @param argv - arguments after the node executable and script path
  * @returns the process exit code
  */
-function main(argv: readonly string[]): number {
-  const [command = '--help', variantArg] = argv;
+async function main(argv: readonly string[]): Promise<number> {
+  const { command, positional, dir } = parseArgs(argv);
 
   if (command === '--help' || command === '-h' || command === 'help') {
     console.log(USAGE);
@@ -99,31 +146,50 @@ function main(argv: readonly string[]): number {
     return EXIT.usage;
   }
 
-  const library = ContentLibrary.create(SAMPLE_CONTENT);
-  if (!library.ok) {
-    for (const error of library.error) {
-      console.error(`error [${error.code}]: ${error.message}`);
+  if (command === 'where') {
+    return runWhere({ explicitDir: dir });
+  }
+
+  if (!['demo', 'list', 'check', 'prep'].includes(command)) {
+    console.error(`unknown command: ${command}\n`);
+    console.error(USAGE);
+    return EXIT.usage;
+  }
+
+  const resolved = await resolveContent({ explicitDir: dir });
+  if (!resolved.ok) {
+    for (const diagnostic of resolved.failure.diagnostics) {
+      console.error(`error [${diagnostic.code}]: ${diagnostic.message}`);
     }
+    console.error(`\n${resolved.failure.diagnostics.length} problem(s) found; nothing was built.`);
     return EXIT.failure;
   }
 
-  const defaultVariant = library.value.listVariants()[0]?.id ?? '';
-  const variantId = variantArg ?? defaultVariant;
+  const { library, origin, workspaceRoot, defaultVariantId, warnings } = resolved.content;
+
+  for (const warning of warnings) {
+    console.error(`warning: ${warning}`);
+  }
+  if (origin === 'sample') {
+    console.error('note: no .vitae/ folder found — using built-in sample content.\n');
+  } else {
+    console.error(`workspace: ${workspaceRoot ?? ''}\n`);
+  }
+
+  const variantId = positional ?? defaultVariantId ?? library.listVariants()[0]?.id ?? '';
 
   switch (command) {
     case 'demo':
-      return runDemo(library.value, variantId);
+      return runDemo(library, variantId);
     case 'list':
-      return runList(library.value);
+      return runList(library);
     case 'check':
-      return runCheck(library.value, variantId);
+      return runCheck(library, variantId);
     case 'prep':
-      return runPrep(library.value, variantId);
+      return runPrep(library, variantId);
     default:
-      console.error(`unknown command: ${command}\n`);
-      console.error(USAGE);
       return EXIT.usage;
   }
 }
 
-process.exitCode = main(process.argv.slice(2));
+process.exitCode = await main(process.argv.slice(2));
