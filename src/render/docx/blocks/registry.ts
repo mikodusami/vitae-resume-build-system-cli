@@ -8,7 +8,7 @@
  * this is a registry rather than a `switch` that grows quietly stale.
  */
 
-import type { Paragraph } from 'docx';
+import type { Paragraph, Table } from 'docx';
 
 import type { Block } from '../../../domain/index.js';
 import type { StyleResolver } from '../StyleResolver.js';
@@ -16,11 +16,19 @@ import { renderBullet } from './bullet.js';
 import { renderParagraph } from './paragraph.js';
 import { renderSplitLine } from './splitLine.js';
 
-/** Turns one block of a known kind into a docx paragraph. */
+/**
+ * What a block renders to.
+ *
+ * `Table` is in the union because a split line is a borderless two-cell table
+ * rather than a tab stop — see `splitLine.ts` for why.
+ */
+export type RenderedBlock = Paragraph | Table;
+
+/** Turns one block of a known kind into a docx body element. */
 export type BlockRenderer<TBlock extends Block> = (
   block: TBlock,
   resolver: StyleResolver,
-) => Paragraph;
+) => RenderedBlock;
 
 /** Exhaustive map from block kind to its renderer. */
 export type BlockRendererMap = {
@@ -44,7 +52,7 @@ export const BLOCK_RENDERERS: BlockRendererMap = {
  * @param block - any IR block
  * @param resolver - style resolver carrying the theme
  */
-export function renderBlock(block: Block, resolver: StyleResolver): Paragraph {
+export function renderBlock(block: Block, resolver: StyleResolver): RenderedBlock {
   const renderer = BLOCK_RENDERERS[block.kind] as BlockRenderer<Block>;
   return renderer(block, resolver);
 }

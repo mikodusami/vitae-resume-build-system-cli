@@ -279,10 +279,21 @@ see otherwise, report it.
 
 ### The output is A4 / the wrong size
 
-Page size is set explicitly from the theme. Check `page.width`/`page.height`,
-and remember to recompute `rightTab` if you change the page or margins.
+Page size is set explicitly from the theme. Check `page.width`/`page.height`.
 
 ### Dates are not flush right
 
-`rightTab` should equal page width minus both margins. Default:
-`12240 - 720 - 720 = 10800`. See [theming.md](theming.md).
+Split lines are borderless two-cell tables sized from your page geometry, so
+this should hold regardless of margins.
+
+If you are on a version before that change, the symptom was specific: the date
+sat right next to the title looking "squeezed", and clicking before it and
+pressing Tab snapped it into place. That was a right tab stop being dropped on
+import — Apple's stack (Quick Look, Preview, Pages) discards custom tab stops
+outright, and Google Docs lost the tab character. Rebuild with a current
+version.
+
+### My theme.ts says `rightTab` is an unknown field
+
+That setting no longer exists — remove the line. The right-hand column is now
+derived from `page.width - 2 × page.margin`.

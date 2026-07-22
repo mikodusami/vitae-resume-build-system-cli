@@ -13,6 +13,7 @@ import {
   type IRunOptions,
   type ISectionPropertiesOptions,
   type ISpacingProperties,
+  type ITableBordersOptions,
 } from 'docx';
 
 import type { Block, TextRun } from '../../domain/index.js';
@@ -103,9 +104,37 @@ export class StyleResolver {
     };
   }
 
-  /** Where the right-aligned half of a split line lands, in DXA. */
-  public get rightTabPosition(): number {
-    return this.theme.rightTab;
+  /**
+   * Width of the text area, in DXA.
+   *
+   * Derived from the page rather than configured, so it can never disagree
+   * with the margins. An earlier design had this as a separate `rightTab`
+   * theme value that silently had to equal `width - 2 × margin`; changing the
+   * margin and forgetting to update it broke alignment with no error.
+   */
+  public get contentWidth(): number {
+    return this.theme.page.width - this.theme.page.margin * 2;
+  }
+
+  /**
+   * Borders for the layout tables behind split lines.
+   *
+   * Every edge is explicitly `NONE` rather than omitted: several renderers
+   * apply a default hairline grid to a table with no border definition, and a
+   * faint box around every job title is exactly the kind of defect nobody
+   * notices until it is printed.
+   */
+  public invisibleTableBorders(): ITableBordersOptions {
+    const none = { style: BorderStyle.NONE, size: 0, color: 'auto' } as const;
+
+    return {
+      top: none,
+      bottom: none,
+      left: none,
+      right: none,
+      insideHorizontal: none,
+      insideVertical: none,
+    };
   }
 
   /** Bullet indentation, in DXA. */

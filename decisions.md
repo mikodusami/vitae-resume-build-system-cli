@@ -5,6 +5,60 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Split lines: tables, not tab stops
+
+### 2026-07-22 · Right-aligned dates are a layout table, because tab stops are not portable
+
+**Reported:** dates and links looked "squeezed" against the title rather than
+right-aligned. Clicking before the date and pressing Tab snapped it into
+position.
+
+**Investigated:** the emitted OOXML was correct — `<w:tabs><w:tab
+w:val="right" w:pos="10800"/></w:tabs>` in every split line's paragraph
+properties, a `<w:r><w:tab/></w:r>` between the halves, schema-valid element
+ordering, and a text width of exactly 10800 DXA. It rendered correctly in Word.
+
+The failure was in the *importers*, and the user's own workaround identified
+it: the tab stop survived (typing a Tab jumped to the right position) while the
+tab character did not. Apple's document stack — Quick Look, Preview, TextEdit,
+Pages — discards custom tab stops entirely, confirmed by `textutil` dropping
+them even from a minimal hand-built docx. Google Docs kept the stop and lost
+the character.
+
+**Decided:** render split lines as borderless two-cell tables with the right
+cell right-aligned. This needs neither a tab stop nor a tab character, so it
+does not depend on importer behaviour at all.
+
+Notable: **the document IR did not change.** `splitLine` still means "these two
+things sit on one line, pushed apart"; only the docx translation of that
+meaning changed, and `PlainTextRenderer` never noticed. A rendering bug stayed
+a rendering fix, which is exactly what the semantic-IR decision was for.
+
+Cost accepted: these lines are now tables, which some older ATS parsers handle
+less predictably than paragraphs. Mitigated by it being a single row of two
+cells rather than a page-level multi-column layout, and by `--format txt`
+existing for ATS submission.
+
+### 2026-07-22 · `theme.rightTab` removed; column widths derive from the page
+
+`rightTab` was a configured value that silently had to equal
+`page.width - 2 × page.margin`. Changing a margin and forgetting to update it
+misaligned every date with no error — a footgun documented in the theming guide
+rather than designed out.
+
+It is now computed from the page geometry in `StyleResolver.contentWidth`.
+Widening a margin just works, and there is one fewer number that can be wrong.
+The field is gone rather than deprecated: the strict theme schema reports it as
+an unknown field, which is an actionable message rather than a setting that
+quietly does nothing.
+
+Explicit DXA column widths and `TableLayoutType.FIXED` are emitted alongside
+the cell widths, because some renderers lay a table out from `tblGrid` rather
+than from cell widths, and a grid disagreeing with the cells is how
+"right-aligned" quietly stops being right-aligned.
+
+---
+
 ## 2026-07-22 — Layer 6: Archive, PDF Gate, Prep & Diff
 
 ### 2026-07-22 · The architectural acceptance test, and what it found

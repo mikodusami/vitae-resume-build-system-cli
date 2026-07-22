@@ -28,18 +28,65 @@ describe('DocxRenderer document body', () => {
     expect(xml).not.toContain('•');
   });
 
-  it('gives split lines a right tab stop at the themed position', async () => {
+  it('right-aligns the second half of a split line', async () => {
     const xml = await renderDocumentXml();
 
-    expect(xml).toContain(`w:val="right" w:pos="${DEFAULT_THEME.rightTab}"`);
-    expect(xml).toContain('<w:tab/>');
+    // The date sits in its own right-aligned cell. Asserted structurally
+    // because this is the property that was actually broken in the field.
+    expect(xml).toContain('<w:jc w:val="right"/>');
   });
 
-  it('moves the tab stop when the theme moves it', async () => {
-    const xml = await renderDocumentXml({ ...DEFAULT_THEME, rightTab: 9000 });
+  it('renders split lines as tables, not tab stops', async () => {
+    const xml = await renderDocumentXml();
 
-    expect(xml).toContain('w:pos="9000"');
-    expect(xml).not.toContain(`w:pos="${DEFAULT_THEME.rightTab}"`);
+    expect(xml).toContain('<w:tbl>');
+    // A right tab stop is valid OOXML that Word honours, but Apple's importer
+    // discards custom tab stops outright and Google Docs dropped the tab
+    // character, so dates collided with titles. Never regress to that.
+    expect(xml).not.toContain('w:val="right" w:pos=');
+    expect(xml).not.toContain('<w:tab/>');
+  });
+
+  it('derives column widths from the page geometry', async () => {
+    const xml = await renderDocumentXml();
+    const contentWidth = DEFAULT_THEME.page.width - DEFAULT_THEME.page.margin * 2;
+
+    // The grid must agree with the cells, or renderers that lay out from
+    // tblGrid put the right column somewhere else entirely.
+    expect(xml).toContain(`<w:tblW w:type="dxa" w:w="${contentWidth}"/>`);
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
+
+    const grid = xml.match(/<w:tblGrid>[\s\S]*?<\/w:tblGrid>/)?.[0] ?? '';
+    const columns = [...grid.matchAll(/w:w="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(columns).toHaveLength(2);
+    expect(columns[0]! + columns[1]!).toBe(contentWidth);
+  });
+
+  it('tracks a changed page margin without any other theme edit', async () => {
+    const theme = { ...DEFAULT_THEME, page: { ...DEFAULT_THEME.page, margin: 1440 } };
+    const xml = await renderDocumentXml(theme);
+
+    // The old design had a separate rightTab constant that silently had to
+    // equal width - 2 x margin. Widening the margin now just works.
+    expect(xml).toContain(`<w:tblW w:type="dxa" w:w="${12240 - 2880}"/>`);
+  });
+
+  it('makes the layout tables invisible on every edge', async () => {
+    const xml = await renderDocumentXml();
+
+    // A table with no border definition picks up a default hairline grid in
+    // several renderers — a faint box around every job title.
+    expect(xml).toContain('<w:tblBorders>');
+    expect(xml).not.toContain('w:val="single" w:sz="4" w:color="auto"');
+  });
+
+  it('keeps split lines flush with surrounding paragraphs', async () => {
+    const xml = await renderDocumentXml();
+
+    // Default cell padding would indent every job header relative to its
+    // bullets. All four margins must be explicitly zero.
+    const margins = xml.match(/<w:tblCellMar>[\s\S]*?<\/w:tblCellMar>/);
+    expect(margins?.[0] ?? '').not.toMatch(/w:w="[1-9]/);
   });
 
   it('draws the rule under section headings', async () => {

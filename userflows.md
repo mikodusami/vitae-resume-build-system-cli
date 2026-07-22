@@ -7,6 +7,46 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Fix — right-aligned dates and links
+
+### Flow F.1 — The alignment holds in every viewer
+
+```bash
+cd /tmp/vt6 && vitae build software-engineer
+```
+
+Open `.vitae/dist/resume_software_engineer.docx` in **Quick Look** and in
+**Google Docs**, not only Word. Dates and project links must sit flush with the
+right margin in all three.
+
+This is worth checking in more than one app because that is exactly how the bug
+escaped: the previous implementation used a right tab stop, which is valid
+OOXML that Word honours, while Apple's importer discards custom tab stops and
+Google Docs dropped the tab character. The symptom was a date "squeezed"
+against the title that snapped into place if you typed a Tab yourself.
+
+### Flow F.2 — The markup no longer depends on tab handling
+
+```bash
+cd /tmp && rm -rf zz && mkdir zz && cd zz \
+  && unzip -q -o /tmp/vt6/.vitae/dist/resume_software_engineer.docx \
+  && grep -c "<w:tab/>" word/document.xml; grep -c "<w:tbl>" word/document.xml
+```
+
+Expect `0` tab characters and `7` tables — one per split line. Each is
+borderless, has zero cell padding, and its two columns sum to the page's text
+width.
+
+### Flow F.3 — Margins no longer need a second edit
+
+Set `page: { margin: 1440 }` in `.vitae/theme.ts`, rebuild, and confirm dates
+are still flush right. Column widths derive from
+`page.width - 2 × page.margin`, so there is no longer a `rightTab` constant to
+keep in sync — it has been removed, and a theme still setting it now reports an
+unknown field rather than silently misaligning.
+
+---
+
 ## Layer 6 — Archive, PDF Gate, Prep & Diff
 
 **Setup:** `npm run link`, then a scratch workspace that is also a git repo:
@@ -105,7 +145,7 @@ expect an actionable `git init` message rather than a raw `fatal:`.
 npx vitest run
 ```
 
-Expect 224 passing. Then the check this layer exists to run:
+Expect 228 passing. Then the check this layer exists to run:
 
 ```bash
 git diff --stat HEAD -- src/domain/
@@ -393,7 +433,7 @@ assert on the actual OOXML:
   hard-coded bullet looks identical on screen but is not a list to Word, an
   ATS, or a screen reader
 - split lines carry a right tab stop at the themed position, and moving
-  `rightTab` in the theme moves it in the XML
+  the split-line table's columns sum to the page's text width
 - page size is written explicitly, so output is never silently A4
 - no run contains a newline
 - `docProps/core.xml` carries the title, creator, and derived keywords

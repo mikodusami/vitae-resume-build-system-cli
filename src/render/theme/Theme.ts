@@ -62,8 +62,6 @@ export interface Theme {
   readonly page: PageTheme;
   /** Run size per semantic role, in half-points. */
   readonly sizes: Readonly<Record<TextRole, number>>;
-  /** Position of the right-aligned tab stop used by split lines, in DXA. */
-  readonly rightTab: number;
   readonly bullet: BulletTheme;
   readonly spacing: SpacingTheme;
   readonly sectionRule: SectionRuleTheme;
@@ -73,9 +71,9 @@ export interface Theme {
  * The defaults every user theme merges onto.
  *
  * These are the proven values from the working generator: US Letter with 0.5"
- * margins, Calibri, and a right tab stop at 7.5" (page width minus both
- * margins). Because defaults live in the tool, a user's `theme.ts` stays small
- * and diffable — someone who only wants a different font says only that.
+ * margins and Calibri. Because defaults live in the tool, a user's `theme.ts`
+ * stays small and diffable — someone who only wants a different font says only
+ * that.
  */
 export const DEFAULT_THEME: Theme = {
   font: 'Calibri',
@@ -91,7 +89,6 @@ export const DEFAULT_THEME: Theme = {
     meta: 18,
     link: 18,
   },
-  rightTab: 10800,
   bullet: {
     indent: 260,
     hanging: 160,

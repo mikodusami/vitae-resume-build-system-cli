@@ -40,7 +40,7 @@ import {
 import type { Renderer, ResumeDocument, Section } from '../../domain/index.js';
 import { DEFAULT_THEME, type Theme } from '../theme/Theme.js';
 import { BULLET_NUMBERING_REFERENCE } from './blocks/bullet.js';
-import { renderBlock } from './blocks/registry.js';
+import { renderBlock, type RenderedBlock } from './blocks/registry.js';
 import { StyleResolver } from './StyleResolver.js';
 
 /** Tool name recorded as the last editor. */
@@ -107,18 +107,18 @@ export class DocxRenderer implements Renderer<Buffer> {
    * injected that the IR did not say. If output needs something the IR cannot
    * express, that is a domain change, not a special case here.
    */
-  private renderSection(section: Section): Paragraph[] {
-    const paragraphs: Paragraph[] = [];
+  private renderSection(section: Section): RenderedBlock[] {
+    const children: RenderedBlock[] = [];
 
     if (section.heading !== undefined) {
-      paragraphs.push(this.renderHeading(section.heading));
+      children.push(this.renderHeading(section.heading));
     }
 
     for (const block of section.blocks) {
-      paragraphs.push(renderBlock(block, this.resolver));
+      children.push(renderBlock(block, this.resolver));
     }
 
-    return paragraphs;
+    return children;
   }
 
   /** A section heading paragraph, with the themed rule beneath it. */

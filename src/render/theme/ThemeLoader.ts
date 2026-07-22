@@ -56,7 +56,6 @@ const partialThemeSchema: z.ZodType<PartialTheme> = z.strictObject({
       link: positive.optional(),
     })
     .optional(),
-  rightTab: positive.optional(),
   bullet: z
     .strictObject({
       indent: z.number().nonnegative().optional(),
@@ -127,7 +126,6 @@ export function mergeTheme(partial: PartialTheme, base: Theme = DEFAULT_THEME): 
     font: partial.font ?? base.font,
     page: mergeGroup(base.page, partial.page),
     sizes: mergeGroup(base.sizes, partial.sizes),
-    rightTab: partial.rightTab ?? base.rightTab,
     bullet: mergeGroup(base.bullet, partial.bullet),
     spacing: mergeGroup(base.spacing, partial.spacing),
     sectionRule: mergeGroup(base.sectionRule, partial.sectionRule),

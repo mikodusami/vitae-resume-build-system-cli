@@ -52,8 +52,6 @@ export default {
     link: 18,           // 9pt    — project links
   },
 
-  rightTab: 10800,    // DXA — where right-aligned dates land (7.5")
-
   bullet: {
     indent: 260,      // DXA — left indent of bullet text
     hanging: 160,     // DXA — how far the glyph hangs back
@@ -93,13 +91,17 @@ Changing `sizes.meta` therefore restyles every date, location, and the contact
 line at once, because they are the same *kind* of thing. That is the payoff of
 roles over per-section styling.
 
-### `rightTab`
+### Where right-aligned dates come from
 
-The position of the right-aligned half of every "left text …… right date" line:
-job headers, education, project headers. The default `10800` is page width
-minus both margins (`12240 - 720 - 720`). **If you change `page.margin` or
-`page.width`, recompute this** or your dates will not sit flush with the right
-margin.
+There is no setting for this. Job headers, education lines, and project
+headers are laid out as borderless two-cell tables whose width is derived from
+`page.width - 2 × page.margin`, so changing your margins moves the right-hand
+column automatically.
+
+Earlier versions had a `rightTab` value that silently had to equal that same
+arithmetic; changing a margin and forgetting to update it broke alignment with
+no error. If your `theme.ts` still sets `rightTab`, remove it — the strict
+schema will tell you so.
 
 ## Recipes
 
@@ -126,14 +128,15 @@ export default {
 };
 ```
 
-**A4 instead of US Letter** — note the `rightTab` recompute:
+**A4 instead of US Letter:**
 
 ```ts
 export default {
   page: { width: 11906, height: 16838, margin: 720 },
-  rightTab: 10466, // 11906 - 720 - 720
 };
 ```
+
+Right-aligned dates follow the new page width on their own.
 
 **No rule under headings:**
 
