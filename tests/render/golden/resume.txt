@@ -5,7 +5,8 @@ SUMMARY
 Data engineer focused on reliable pipelines.
 
 EDUCATION
-Analytical University, B.S. Computer Science                            May 2026
+Analytical University                                              Cambridge, MA
+B.S. Computer Science                                                   May 2026
 Relevant Coursework: Distributed Systems, Data Mining
 
 SKILLS
