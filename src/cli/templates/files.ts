@@ -56,12 +56,15 @@ export default {
 
 const EDUCATION_TS = `/**
  * Your degree. \`coursework\` here is the default; a variant may override it
- * with a more relevant list.
+ * with a more relevant list. \`gpa\` is optional — delete the line entirely
+ * if you'd rather not show one.
  */
 export default {
   institution: 'State University',
+  location: 'Blacksburg, VA',
   degree: 'B.S. Computer Science',
   date: 'May 2026',
+  gpa: { label: 'Major GPA', value: '3.32' },
   coursework: 'Data Structures, Algorithms, Databases, Operating Systems',
 };
 `;
@@ -300,7 +303,7 @@ which bullet changed between two versions of your resume — the thing a binary
     theme.ts         fonts, sizes, spacing — everything presentational
     content/         the shared library every variant draws from
       header.ts        name + contact line
-      education.ts     degree, date, default coursework
+      education.ts     institution, location, degree, date, GPA, coursework
       work.ts          job history
       projects.ts      every project, referenced by id
       leadership.ts    leadership entries + the awards line
