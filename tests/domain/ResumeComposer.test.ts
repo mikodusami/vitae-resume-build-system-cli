@@ -30,6 +30,25 @@ describe('ResumeComposer', () => {
     ]);
   });
 
+  it('omits the Summary section entirely when the variant has no summary', () => {
+    const doc = composeOrThrow({ summary: undefined });
+
+    expect(doc.sections.map((section) => section.heading)).toEqual([
+      undefined,
+      SECTION_HEADINGS.education,
+      SECTION_HEADINGS.skills,
+      SECTION_HEADINGS.work,
+      SECTION_HEADINGS.projects,
+      SECTION_HEADINGS.leadership,
+    ]);
+  });
+
+  it('falls back to an empty document description when there is no summary', () => {
+    const doc = composeOrThrow({ summary: undefined });
+
+    expect(doc.meta.description).toBe('');
+  });
+
   it('renders a two-project variant as split lines followed by bullets', () => {
     const doc = composeOrThrow();
 
