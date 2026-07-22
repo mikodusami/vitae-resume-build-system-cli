@@ -131,6 +131,28 @@ Layer 5 (built) is the rest of `src/cli/`:
 sanctioned exception. There is no built-in sample content any more — a missing
 workspace is a diagnostic suggesting `vitae init`.
 
+Layer 6 (built) adds archiving, the PDF gate, `prep`, and `diff`:
+
+- **External programs are optional ports.** git and LibreOffice sit behind
+  `ContentStamper`/`SourceDiffer` and `PdfConverter`/`PageCounter`, declared in
+  `src/app/ports/environment.ts` (not infra — `app/` may not import `infra/`)
+  and implemented by `GitCliProvider` and `LibreOfficePdfConverter`. Every
+  consumer degrades with a warning; nothing hard-fails when they are missing.
+- `infra/process/` — one `ProcessRunner` for all subprocess work, with
+  `FakeProcessRunner` for tests. **No test may spawn real git or soffice.**
+  Arguments are always an array, never a shell string.
+- **The archive stamp must never lie.** Clean → `a1b2c3d`, dirty →
+  `a1b2c3d-dirty` + warning, no repo → `nogit` + warning. When the dirty check
+  itself fails, assume dirty. Provenance is read from the **workspace root**,
+  never `archiveDir` — that directory is created after stamping, and asking git
+  about a nonexistent path silently stamps everything `nogit`.
+- Archives are **append-only**: an existing name is reported and skipped.
+- Page counting is in-process via `pdf-lib`; conversion happens in a temp
+  directory that is cleaned up on every path, because LibreOffice writes beside
+  its input by default and nothing may land next to a user's files.
+- A page-budget check that *cannot run* is a warning, never a failure and never
+  a silent pass.
+
 Two invariants worth restating before changing anything here: the domain must
 not import `fs` or `docx`, and `ResumeDocument` must stay presentation-free. If
 it starts producing docx objects directly, the layer has failed even if the

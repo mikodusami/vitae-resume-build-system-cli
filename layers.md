@@ -1,3 +1,130 @@
+# vitae — Layer 6: Archive, PDF Gate, Prep & Diff
+
+**Goal:** the features that make the tool worth keeping — hash-stamped archived builds, the one-page limit as an enforced test, interview-prep generation from the claims registry, and content diffing against git history.
+
+**Depends on:** all previous layers.
+
+**Acceptance test for the whole architecture:** every feature in this layer should drop into a seam already left open. Layers 1–4 should require **zero modifications**. If one forces a change downward, stop and note which seam was misplaced — that's more valuable information than the feature.
+
+---
+
+## Architectural decisions being locked in
+
+**1. External programs are ports, and they are optional.** LibreOffice and git are capabilities the environment may or may not provide. Both go behind interfaces (`PdfConverter`, `GitProvider`) with real implementations and explicit absence handling. The tool must remain fully functional without either — someone who clones this to build a resume shouldn't be blocked because they don't have LibreOffice installed. Features that genuinely require a missing capability fail with an actionable message naming what to install, never a cryptic spawn error.
+
+**2. One `ProcessRunner` abstraction for all subprocess work.** Both git and LibreOffice need spawning, timeouts, output capture, and error normalization. Write that once. It's also the single place to fake in tests, so no test ever actually launches LibreOffice.
+
+**3. Capability detection happens once, at bootstrap, and is inspectable.** A `CapabilityRegistry` probes for `soffice` and `git` at startup and exposes the results — surfaced through a new `doctor` command. Users diagnosing a broken environment should be able to ask the tool rather than guess.
+
+**4. The archive hash identifies _inputs_, not outputs.** The stamp is the short git hash of the `.vitae` content that produced the build, so `git show <hash>` reconstructs the source. A dirty working tree makes that guarantee false, so a dirty build is stamped `a1b2c3d-dirty` and warned about. Silently stamping uncommitted content with a clean hash would quietly destroy the one property the archive exists to provide.
+
+**5. Archives are append-only.** Never overwrite an archived file. A rebuild producing an identical name means the same content was already archived today — report it and skip rather than clobbering, since the archive is a historical record, not a cache.
+
+**6. Page counting avoids a second system dependency.** Convert with LibreOffice, then count pages in-process with a JS PDF library rather than shelling out to `pdfinfo`. One external dependency instead of two, and the count becomes unit-testable against a fixture PDF.
+
+**7. Prep output is a document, not terminal decoration.** `prep` produces markdown intended to be saved and worked through, so it goes through a renderer-like path and can be written to a file — not assembled with `console.log` in a command handler.
+
+---
+
+## Deliverables
+
+### 6.1 — `ProcessRunner` (`src/infra/process/`)
+
+```ts
+interface ProcessRunner {
+  run(
+    cmd: string,
+    args: string[],
+    opts?: { cwd?: string; timeoutMs?: number },
+  ): Promise<Result<{ stdout: string; stderr: string }, ProcessError>>;
+  which(cmd: string): Promise<boolean>;
+}
+```
+
+`NodeProcessRunner` implements it; `FakeProcessRunner` (scripted responses) serves every test in this layer. Non-zero exit, timeout, and binary-not-found each map to distinct `ProcessError` codes.
+
+### 6.2 — `CapabilityRegistry` (`src/infra/capabilities/`)
+
+Probes for `git` and `soffice` once, caches results, exposes `has(capability)` and a summary for `doctor`. Constructed in the composition root and injected — no module-level singletons.
+
+### 6.3 — `GitProvider` (`src/infra/git/`)
+
+```ts
+interface GitProvider {
+  headShortHash(cwd: string): Promise<Result<string, GitError>>;
+  isDirty(cwd: string): Promise<Result<boolean, GitError>>;
+  diffPaths(
+    cwd: string,
+    ref: string,
+    paths: string[],
+  ): Promise<Result<string, GitError>>;
+  isRepository(cwd: string): Promise<boolean>;
+}
+```
+
+`GitCliProvider` wraps `ProcessRunner`. When `.vitae/` isn't a git repository, `--archive` still works but stamps `nogit` and warns — degradation, not failure.
+
+### 6.4 — `PdfConverter` and `PageCounter` (`src/infra/pdf/`)
+
+`LibreOfficePdfConverter` runs `soffice --headless --convert-to pdf` into a temp directory (never alongside the user's files), returns the PDF buffer, and cleans up. Conversion is slow, so a generous timeout with a clear timeout message matters. `PageCounter` counts pages from a buffer in-process. Missing LibreOffice yields a typed `CapabilityUnavailableError` naming the install step.
+
+### 6.5 — `ArchiveNaming` (`src/app/naming/ArchiveNaming.ts`)
+
+Implements the `NamingStrategy` interface introduced in Layer 4: `2026-07-22_llm-infrastructure_a1b2c3d.docx`, with `-dirty` or `nogit` variants. That this is a new class implementing an existing interface, with no changes to the default strategy, is the concrete proof that decision 4.6 was correct.
+
+### 6.6 — Archive support in `BuildVariantUseCase`
+
+Extend the input with `archive?: boolean` rather than creating a parallel use case — archiving is an additional write of the same bytes, not a different operation. Sequence: render → write to `dist/` → if archiving, resolve hash and dirty state, compute the archive filename, skip-with-report if it already exists, otherwise write. `VariantBuildReport` gains an optional `archivePath`, which existing presenters ignore harmlessly.
+
+### 6.7 — Page budget in `CheckWorkspaceUseCase`
+
+Fills the `pageCounts` seam left optional in Layer 4's `CheckReport`. A `PageBudgetPolicy` holds the limit (default 1, configurable in `config.json`) and produces an error diagnostic when exceeded. When LibreOffice is absent, emit a warning that the page check was skipped — never a failure, and never a silent pass. `build --pdf` uses the same converter to write a PDF next to the docx.
+
+### 6.8 — `PrepUseCase` and prep rendering
+
+For a given variant: gather its projects, resolve claims, and emit a markdown checklist grouped by defensibility tier, with `reviewNotes` as checkbox items and `confident` claims listed briefly for completeness. Include a header naming the variant and the generation date. The command supports `--out <file>`, defaulting to stdout.
+
+This consumes `reviewNotes` exactly as Layer 1 exposed them — no domain changes.
+
+### 6.9 — `DiffUseCase`
+
+`vitae diff <variant> <git-ref>` resolves which content files a variant actually depends on (its own file plus the shared content modules) and asks `GitProvider.diffPaths`. Requires git; without it, an actionable error. Worth noting: diffing only the _relevant_ files is why this is a use case rather than a shell alias — the variant→files mapping is application knowledge.
+
+### 6.10 — `doctor` command
+
+Reports resolved workspace, git availability and repo status, LibreOffice availability and version, variant count, and any content diagnostics. First thing to ask someone whose clone isn't working.
+
+### 6.11 — Tests (`tests/`)
+
+- `ArchiveNaming` formatting across clean, dirty, and no-git states.
+- Archive skip-when-exists writes nothing and reports the skip.
+- Dirty tree produces a `-dirty` stamp **and** a warning diagnostic.
+- Page budget: a two-page fixture PDF yields an error diagnostic; missing LibreOffice yields a warning, not a failure.
+- `prep` output for a variant containing all three tiers, as a golden file.
+- `diff` requests exactly the expected paths (assert against `FakeProcessRunner`).
+- `doctor` renders correctly with each capability present and absent.
+- No test spawns a real `soffice` or `git` process except, optionally, one integration test skipped when the binary is absent.
+
+### 6.12 — Documentation
+
+README sections for archiving and its git-hash guarantee, the one-page gate and its optional dependency, `prep`, and `doctor`. Update the claims-tier explanation to describe the full loop: flag a project `needs-review` → `prep` generates the checklist → review it → flip to `confident` as a commit.
+
+---
+
+## Definition of done
+
+`vitae build llm-infrastructure --archive` writes a dated, hash-stamped file and warns when the tree is dirty. `vitae check --all` fails when a variant exceeds one page and warns rather than fails when LibreOffice is missing. `vitae prep responsible-ai` produces the interview checklist. `vitae doctor` explains a broken environment. Everything except archiving, PDF, and diff works on a machine with neither git nor LibreOffice installed.
+
+**And the architectural check:** `git diff` across this layer's work should show no modifications inside `src/domain/`, and in `src/app/` only additive changes — a new naming strategy, an optional input field, an optional report field. Record any exception; it's the most useful design feedback the project will produce.
+
+## Handoff note for Codex
+
+The subtle bug to avoid is stamping a dirty working tree with a clean hash — the archive's entire value is that `git show <hash>` reconstructs what was sent, and a false stamp is worse than no stamp. Second: no code path may leave temp PDF files in the user's workspace; conversion happens in a temp directory and cleans up even on failure.
+
+## Beyond v1
+
+The natural next feature is `vitae tailor <variant> --posting job.txt`, proposing (never auto-applying) bullet reorderings and keyword swaps against a real job description. It slots in as a new use case behind a provider-agnostic AI runner port — `claude -p`, Codex, or ChatGPT CLI as interchangeable adapters, matching the pattern from your other tools — with `ProcessRunner` already in place to execute them. Cover-letter generation from the same content blocks, and joining archived builds to where they were sent, follow the same shape: new use case, new adapter, no changes below.
+
 # vitae — Layer 5: CLI, Composition Root & Scaffolding
 
 **Goal:** make the tool runnable. Wire every concrete adapter in one place, expose commands, turn reports into terminal output and exit codes, and ship `vitae init` so someone with an empty folder can get to a working resume.

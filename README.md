@@ -33,12 +33,14 @@ Three problems with keeping resumes in Word:
 | Command                 | What it does                                              |
 | ----------------------- | --------------------------------------------------------- |
 | `vitae init [dir]`      | scaffold a `.vitae/` workspace with an example resume      |
-| `vitae build <variant>` | render and write to `dist/`; `--all`, `--force`, `--format`|
-| `vitae check [variant]` | validate claims and composition, writing nothing           |
+| `vitae build <variant>` | render and write to `dist/`; `--all`, `--force`, `--format`, `--archive`, `--pdf` |
+| `vitae check [variant]` | validate claims and composition, writing nothing; `--pages` |
 | `vitae list`            | variants, their projects, and defensibility status         |
-| `vitae prep <variant>`  | interview checklist from that variant's review notes       |
+| `vitae prep <variant>`  | interview checklist as markdown; `--out <file>`             |
+| `vitae diff <variant> <ref>` | what changed in that variant's content since a git ref |
 | `vitae text <variant>`  | print an ATS-safe plain-text version                       |
 | `vitae where`           | which workspace resolved, and by which rule                |
+| `vitae doctor`          | what this environment can and cannot do                    |
 
 Global options: `--dir <path>`, `--json`, `--no-color`, `--verbose`.
 
@@ -78,6 +80,56 @@ commit — and a dated record of when it became interview-safe.
 Two framings of the same work (a general version and a governance-focused one)
 are separate projects sharing a `claimId`, so the honesty layer treats them as
 one thing you have to be able to defend.
+
+### The loop
+
+1. Flag a project `needs-review` with notes on what you'd need to reread.
+2. `vitae prep software-engineer --out prep.md` — a checklist for exactly the
+   resume you're about to send, with `- [ ]` boxes.
+3. Work through it.
+4. Flip the tier to `confident`. That commit is a dated record of when the
+   project became interview-safe.
+
+## Archiving what you sent
+
+```bash
+vitae build software-engineer --archive
+```
+
+Writes `archive/2026-07-22_software-engineer_a1b2c3d.docx` alongside the normal
+`dist/` build. The hash is the commit of the **content that produced it**, so
+when a recruiter replies about something you sent three weeks ago,
+`git show a1b2c3d` reconstructs exactly what they're holding.
+
+That guarantee is enforced rather than assumed:
+
+- Uncommitted changes produce `a1b2c3d-dirty` and a warning — the commit does
+  not contain what was built, and the filename says so.
+- No git repository produces `nogit` and a warning suggesting `git init`.
+- Archives are **append-only**. A rebuild that would produce an existing name
+  reports the skip and leaves the file alone; the archive is a historical
+  record, not a cache.
+
+Rule of thumb: `--archive` whenever you actually send one, plain builds while
+iterating.
+
+## The one-page gate
+
+```bash
+vitae check --pages
+```
+
+Renders each variant, converts it, and counts pages — so your hard limit is a
+test rather than something you eyeball. Over the limit is exit `1`; raise it
+with `"pageLimit": 2` in `config.json`.
+
+This needs **LibreOffice**, which is optional. Without it the check warns that
+the gate was skipped and passes — never a silent pass, and never a failure just
+because an optional program is missing. `vitae build --pdf` behaves the same
+way. Install it with `brew install --cask libreoffice`, or from libreoffice.org.
+
+`vitae doctor` tells you which capabilities this machine has and what each one
+unlocks — the first thing to run when a clone isn't behaving.
 
 ## Workspace layout
 
@@ -150,6 +202,9 @@ Five ideas carry most of the weight:
   if the IR ever quietly becomes docx-shaped, it breaks immediately.
 - **The app layer never prints and never exits.** Use cases return reports; the
   CLI turns them into output and exit codes.
+- **External programs are optional ports.** git and LibreOffice sit behind
+  interfaces with fakes for tests, so no test ever spawns them and no feature
+  hard-fails when they're absent.
 
 ## Status
 
@@ -160,6 +215,8 @@ Five ideas carry most of the weight:
 | 3 — Theme & rendering    | ✅ built    |
 | 4 — Application services | ✅ built    |
 | 5 — CLI & scaffolding    | ✅ built    |
-| 6 — archive, diff, PDF   | not started |
+| 6 — archive, PDF, prep, diff | ✅ built |
 
-`diff` and `--archive`/`--pdf` are not implemented yet.
+Everything in the v1 design is implemented. `--pdf` and `check --pages` need
+LibreOffice; `--archive` stamping and `diff` need git. Everything else works
+with neither installed.

@@ -7,6 +7,116 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Layer 6 — Archive, PDF Gate, Prep & Diff
+
+**Setup:** `npm run link`, then a scratch workspace that is also a git repo:
+
+```bash
+mkdir -p /tmp/vt6 && cd /tmp/vt6 && vitae init
+cd .vitae && git init -q . && git add -A && git commit -qm "initial content" && cd ..
+```
+
+### Flow 6.A — The archive hash actually reconstructs the build
+
+```bash
+vitae build software-engineer --archive
+```
+
+Expect an `archived:` line with a real short hash, e.g.
+`2026-07-22_software-engineer_071cee9.docx`. That hash is the commit whose
+content produced it, so `git -C .vitae show 071cee9` shows exactly what was
+sent. This is the whole point of the feature.
+
+### Flow 6.B — A dirty tree is never stamped clean
+
+```bash
+echo "// edit" >> .vitae/content/projects.ts
+vitae build software-engineer --archive
+```
+
+Expect `..._071cee9-dirty.docx` and an `ARCHIVE_DIRTY` warning explaining that
+the commit does not contain what was built. A false clean stamp would be worse
+than no stamp at all, so this is the assertion that matters most here.
+
+Without git at all (`vitae init` somewhere fresh and don't `git init`), expect
+a `nogit` stamp and an `ARCHIVE_NO_GIT` warning suggesting `git init`.
+
+### Flow 6.C — Archives are append-only
+
+Run the same `--archive` build twice. The second reports
+`already archived: …` with an `ARCHIVE_EXISTS` warning, and `ls .vitae/archive`
+still shows one file per stamp. The archive is a historical record, not a
+cache, so it is never clobbered.
+
+### Flow 6.D — `doctor` explains the environment
+
+```bash
+vitae doctor
+```
+
+Expect the workspace, variant count, git repo status, and a line per
+capability — `✓ git <version>` and either `✓ libreoffice` or `○ libreoffice`
+naming what is unavailable and how to install it. Exit 0 either way: a machine
+without LibreOffice is not a broken machine. Break a content file and rerun to
+see it report the diagnostic and exit 1.
+
+### Flow 6.E — The page gate degrades honestly
+
+```bash
+vitae check --pages
+```
+
+**Without LibreOffice** (as on this machine): every variant passes with a
+`PAGE_BUDGET_SKIPPED` warning and exit 0. Never a silent pass, never a failure
+over an optional dependency.
+
+**With LibreOffice installed:** expect a `Page counts` table, and exit 1 with
+`PAGE_BUDGET_EXCEEDED` if any variant runs to two pages. Raise the limit with
+`"pageLimit": 2` in `config.json`.
+
+`vitae build software-engineer --pdf` uses the same converter and warns rather
+than failing when it is absent.
+
+### Flow 6.F — `prep` closes the claims loop
+
+```bash
+vitae prep software-engineer
+vitae prep software-engineer --out prep.md
+```
+
+Expect markdown grouped by tier, most urgent first, with review notes as
+`- [ ]` checkboxes. With `--out`, stdout stays empty and the confirmation goes
+to stderr. The checklist is generated from the claims of the resume you are
+actually sending, so it cannot drift from what a recruiter is reading.
+
+### Flow 6.G — `diff` shows only what this variant reads
+
+```bash
+vitae diff software-engineer HEAD
+```
+
+Expect a normal unified diff covering that variant's file plus the six shared
+content modules — not the other three resumes. In a workspace without git,
+expect an actionable `git init` message rather than a raw `fatal:`.
+
+### Flow 6.H — The architectural check
+
+```bash
+npx vitest run
+```
+
+Expect 224 passing. Then the check this layer exists to run:
+
+```bash
+git diff --stat HEAD -- src/domain/
+```
+
+Expect **empty** — Layer 6 required no domain change at all. `src/app/` shows
+additive changes plus two recorded exceptions (see `decisions.md`): `check`
+became async, and `ArtifactWriter` gained `exists`.
+
+---
+
 ## Layer 5 — CLI, Composition Root & Scaffolding
 
 The tool is now genuinely usable by someone who has never seen it. These flows

@@ -5,6 +5,94 @@ was decided and why, so a future change knows what it is overturning.
 
 ---
 
+## 2026-07-22 — Layer 6: Archive, PDF Gate, Prep & Diff
+
+### 2026-07-22 · The architectural acceptance test, and what it found
+
+The layer was built as a test of whether Layers 1–4 left the right seams open.
+Result:
+
+- **`src/domain/` — zero modifications.** Archiving, PDF conversion, prep, and
+  diff all landed without touching the domain. `prep` consumes `reviewNotes`
+  exactly as Layer 1 exposed them.
+- **`src/app/` — additive except for two changes**, recorded below rather than
+  glossed over, since this is the most useful design feedback the project
+  produces.
+
+**Exception 1: `CheckWorkspaceUseCase.execute` became async.** Layer 4 said the
+`pageCounts` seam should be fillable "without changing this use case's
+signature". The data shape was right — `pageCounts` slotted in as planned — but
+measuring a page count means converting to PDF, which is I/O, and a synchronous
+method cannot await. The seam was correctly *placed* and incorrectly *typed*:
+anything that might later need I/O should have been async from the start. The
+facade's `check` was already async, so nothing above noticed.
+
+**Exception 2: `ArtifactWriter` gained `exists`.** Append-only archiving needs
+to ask whether a file is already there. Adding a method to a port is a breaking
+change for implementors — here, one real adapter and one fake.
+
+Everything else was genuinely additive: a new naming strategy, optional input
+fields, optional report fields, new use cases, new ports.
+
+### 2026-07-22 · External programs are optional ports, and the tool works without them
+
+git and LibreOffice sit behind `ContentStamper`/`SourceDiffer` and
+`PdfConverter`/`PageCounter`. Neither is required: without git, archives stamp
+`nogit` and warn; without LibreOffice, `--pdf` and the page gate warn and skip.
+Someone who cloned this to build a resume is never blocked by a missing
+optional program, and every unavailable feature names its install step.
+
+Deviation from the literal spec, forced by Layer 4's own rule: the spec put
+these interfaces in `infra/`, but `app/` may not import `infra/`. The ports
+live in `src/app/ports/environment.ts` and the infra adapters implement them —
+the same shape as `ArtifactWriter`.
+
+### 2026-07-22 · The archive hash identifies inputs, and never lies about it
+
+The stamp is the short git hash of the content that produced the build, so
+`git show <hash>` reconstructs what a recruiter is holding. Three states:
+clean → `a1b2c3d`, dirty → `a1b2c3d-dirty` plus a warning, no repository →
+`nogit` plus a warning. When the dirty check itself fails, the build is assumed
+dirty: an over-cautious suffix costs nothing, a false clean stamp destroys the
+only guarantee the archive provides.
+
+**Bug caught during verification:** provenance was initially read from
+`archive/`, which is created on demand *after* stamping. git reported "not a
+repository" for a path that did not exist yet, so every first archive was
+stamped `nogit` inside a perfectly good repository — exactly the silent
+wrong-stamp failure the layer spec warned about. Now read from the workspace
+root, with a regression test.
+
+### 2026-07-22 · Archives are append-only
+
+An existing archive filename means that content was already archived today. It
+is reported and skipped, never overwritten: the archive is a historical record,
+not a cache.
+
+### 2026-07-22 · Page counting stays in-process
+
+LibreOffice converts; `pdf-lib` counts pages from the buffer. Shelling out to
+`pdfinfo` would add a second external dependency to a feature that already
+needs one, and would make the count untestable without installing poppler.
+Conversion happens in a temp directory that is removed on every path including
+failure — LibreOffice writes beside its input by default, and nothing may land
+next to a user's files.
+
+### 2026-07-22 · Page-budget failures never fail a check
+
+Over the limit is an error. The check being *unable to run* is a warning —
+never a failure, because LibreOffice is optional, and never a silent pass,
+because the user must know the gate did not run.
+
+### 2026-07-22 · Prep is a document, diff is scoped by application knowledge
+
+`prep` emits markdown through the presenter and can be saved with `--out`, so
+what you read is what you keep. `diff` restricts git to the files that variant
+actually reads — its own file plus the shared content modules — which is the
+application knowledge that makes it a use case rather than a shell alias.
+
+---
+
 ## 2026-07-22 — Layer 5: CLI, Composition Root & Scaffolding
 
 ### 2026-07-22 · Milestone: first end-to-end run
