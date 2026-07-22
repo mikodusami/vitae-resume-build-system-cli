@@ -103,23 +103,33 @@ never add a `console.log`. The enforcement decision (undefendable claim blocks
 the write, `--force` overrides) lives in `BuildVariantUseCase`, one branch, by
 design.
 
-`src/cli/` dispatches argv (`main.ts`) with commands in `commands/`.
-`compositionRoot.ts` is the **only** place concrete adapters are constructed —
-a `new JitiModuleLoader(...)` anywhere else breaks the property that makes the
-app layer testable against fakes.
-Rules that keep it honest:
+Layer 5 (built) is the rest of `src/cli/`:
 
-- `contentSource.ts` decides provenance. No workspace anywhere → built-in
-  sample content with a stderr note. Workspace found but broken → print
-  diagnostics and exit 1, **never** fall back. Silently building the sample
-  resume because the user's content has a typo is the worst failure mode
-  available.
-- Commands in `PLANNED_COMMANDS` (`init`, `build`, `diff`) exit 2 with the
-  layer that will implement them. Move one out of that map only when it
-  genuinely works.
+- `main.ts` builds the Commander tree and exports `runCli(argv, output)`;
+  `bin.ts` is the executable. **Only these know what argv is.** Keeping them
+  separate is what lets tests drive the real CLI in-process.
+- `bootstrap.ts` is the **only** place concrete adapters are constructed. A
+  `new JitiModuleLoader(...)` anywhere else breaks the property that makes the
+  app layer testable against fakes. (`RendererFactory` constructing
+  `DocxRenderer` is the deliberate exception — that is format selection, which
+  Layer 4 owns.)
+- `presenters/` — `HumanPresenter` and `JsonPresenter` behind one interface.
+  **Reports go to stdout, everything else to stderr**, or `--json | jq`
+  breaks. All colour goes through `Colorizer`, which disables itself under
+  `--no-color`, `--json`, a non-TTY, or `NO_COLOR`.
+- `exitCodes.ts` — the only thing that decides an exit code: `0` success,
+  `1` broken, `2` blocked by the claims policy. When a run is both, `1` wins.
+- `commands/` — thin adapters: translate args, call a use case, present, return
+  a code. If a handler starts branching on claim tiers or formats, that logic
+  belongs in `app/`. Keep them under ~30 lines.
+- `templates/files.ts` — `init` scaffolding as string constants, not files on
+  disk, so packaging needs no copy step and survives `npm link`.
+- `errorBoundary.ts` — one wrapper; stacks only under `--verbose`, `EPIPE`
+  treated as success.
 
-Exit codes: 0 success, 1 failure (unknown ID, error-severity diagnostic),
-2 usage (unknown or unimplemented command).
+`no-console` is enforced across `src/cli/` too; `output.ts` is the single
+sanctioned exception. There is no built-in sample content any more — a missing
+workspace is a diagnostic suggesting `vitae init`.
 
 Two invariants worth restating before changing anything here: the domain must
 not import `fs` or `docx`, and `ResumeDocument` must stay presentation-free. If
