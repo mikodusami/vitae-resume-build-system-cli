@@ -21,6 +21,15 @@ export interface TextRun {
   readonly text: string;
   readonly role: TextRole;
   readonly emphasis?: readonly Emphasis[];
+  /**
+   * Where this run points, when it is a hyperlink.
+   *
+   * A URL is content, not presentation — it cannot be invented from the
+   * `link` role alone, so it travels with the run rather than being guessed
+   * at by the renderer. Absent means "styled like a link, but not clickable,"
+   * which should not normally happen: see `toHref` in `ResumeComposer`.
+   */
+  readonly href?: string;
 }
 
 /** Horizontal placement of a paragraph within the text column. */
@@ -66,11 +75,20 @@ export interface ResumeDocument {
  * @param text - the literal text
  * @param role - semantic role driving the renderer's type choice
  * @param emphasis - optional emphasis; omitted entirely when empty
+ * @param href - where this run points, when it is a hyperlink
  */
-export function run(text: string, role: TextRole, emphasis?: readonly Emphasis[]): TextRun {
-  return emphasis === undefined || emphasis.length === 0
-    ? { text, role }
-    : { text, role, emphasis };
+export function run(
+  text: string,
+  role: TextRole,
+  emphasis?: readonly Emphasis[],
+  href?: string,
+): TextRun {
+  return {
+    text,
+    role,
+    ...(emphasis === undefined || emphasis.length === 0 ? {} : { emphasis }),
+    ...(href === undefined ? {} : { href }),
+  };
 }
 
 /** Builds a paragraph block. */
