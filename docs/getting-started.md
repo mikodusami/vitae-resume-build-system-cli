@@ -125,16 +125,14 @@ them in one pass rather than one rebuild at a time.
 cd .vitae && git init && git add -A && git commit -m "my resume content"
 ```
 
-Strongly recommended, and not just as a backup:
+Strongly recommended, and not just as a backup — a `.docx` can't be diffed,
+but this content is plain TypeScript, so git gives you a real history of what
+changed and when. Without git the tool still works; archives are just stamped
+`nogit` and warn instead.
 
-- `git diff` shows exactly which bullet changed between the version you sent in
-  March and the one you sent in June — the thing a binary `.docx` can never
-  tell you.
-- `vitae build --archive` stamps archived copies with the commit hash, so
-  `git show <hash>` reconstructs precisely what a recruiter is holding.
-- `vitae diff <variant> <ref>` shows what changed on one resume since any ref.
-
-Without git the tool still works; archives are just stamped `nogit` and warn.
+**New to git, or unsure when to commit?** [The git workflow guide](git-workflow.md)
+walks through the exact commands, when to reach for each one, and the full
+loop for sending an application and recalling it later.
 
 ## Day-to-day
 
@@ -147,7 +145,7 @@ vitae check --all                                                # before you tr
 
 `--label` names who the archive is for, so `archive/` is browsable by company
 name later — you'll remember "TechCorp" long before you remember a commit
-hash.
+hash. [Full walkthrough here](git-workflow.md#applying-to-a-job).
 
 ## Optional capabilities
 
