@@ -593,3 +593,27 @@ guarantee per entry.
 
 The scheme-detection regex is now shared between `toHref` and
 `classifyContactHref` rather than duplicated.
+
+### 2026-07-22 · Education gains location and an optional GPA line
+
+Requested layout: institution on its own line with location right-aligned,
+degree/major on the next line with graduation date right-aligned, then an
+optional `Major GPA: 3.32` line, then coursework — replacing the previous
+single `institution, degree` line shared with the date.
+
+`Education` gains a required `location: string` (mirroring `Job.location`,
+already required there) and an optional `gpa?: GpaEntry` — `{ label, value }`
+rather than a preformatted string, so the renderer still owns the `label:
+value` punctuation rather than the content author having to match it by hand.
+`gpa` is **absent**, not an empty string, when a resume shouldn't show one —
+consistent with `Claim.reviewNotes`, the existing optional-field precedent.
+
+`composeEducationBlocks` now emits two `splitLine` blocks (institution/location,
+degree/date) instead of one combined line, then the GPA paragraph only when
+`gpa !== undefined`, then coursework unchanged.
+
+**This is a breaking content-schema change**: any existing `content/education.ts`
+missing `location` now fails `SCHEMA_VALIDATION_FAILED` with a clear
+`location — expected string, received undefined`, rather than silently
+building an incomplete resume. Every fixture, the golden plain-text file, the
+`init` template, and `examples/composeDemo.ts` were updated to match.
