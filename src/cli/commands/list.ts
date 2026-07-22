@@ -1,42 +1,35 @@
 /**
- * `vitae list` — variants, their projects, and defensibility status.
+ * `vitae list` — what is on which resume, and can you defend it.
  */
 
-import { ClaimsResolver, type ContentLibrary } from '../../domain/index.js';
-
-/** Marker shown beside each claim tier. */
-const TIER_MARKERS = {
-  confident: '✓',
-  'needs-review': '!',
-  'cannot-defend': '✗',
-} as const;
+import { toDiagnostic } from '../../app/index.js';
+import { bootstrap } from '../bootstrap.js';
+import { announceWorkspace, type CommandContext } from '../context.js';
+import { EXIT_CODES, type ExitCode } from '../exitCodes.js';
 
 /**
- * Prints every variant with its projects and their claim status.
+ * Summarizes every variant.
  *
- * @param library - the resolved content library
- * @returns process exit code; 0 even when claims are unhealthy, since listing
- * reports rather than gates — use `vitae check` for the gate
+ * Listing reports rather than gates, so it exits 0 even when claims are
+ * unhealthy — `vitae check` is the gate.
+ *
+ * @param context - presenter, output, and global options
  */
-export function runList(library: ContentLibrary): number {
-  const resolver = new ClaimsResolver();
-
-  for (const variant of library.listVariants()) {
-    console.log(`${variant.id}  (${variant.label})`);
-
-    const resolved = resolver.resolve(variant, library);
-    if (!resolved.ok) {
-      for (const error of resolved.error) {
-        console.log(`  error [${error.code}] ${error.message}`);
-      }
-      continue;
-    }
-
-    for (const { claim, projectIds } of resolved.value) {
-      console.log(`  ${TIER_MARKERS[claim.defensibility]} ${projectIds.join(', ')}  ${claim.defensibility}`);
-    }
-    console.log('');
+export async function runList(context: CommandContext): Promise<ExitCode> {
+  const wired = await bootstrap(context.options);
+  if (!wired.ok) {
+    context.output.err(context.presenter.diagnostics(wired.error));
+    return EXIT_CODES.failure;
   }
 
-  return 0;
+  announceWorkspace(context, wired.value.workspaceRoot, wired.value.warnings);
+
+  const result = await wired.value.app.list();
+  if (!result.ok) {
+    context.output.err(context.presenter.diagnostics(result.error.map(toDiagnostic)));
+    return EXIT_CODES.failure;
+  }
+
+  context.output.out(context.presenter.list(result.value));
+  return EXIT_CODES.success;
 }

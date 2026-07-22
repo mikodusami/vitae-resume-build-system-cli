@@ -1,44 +1,63 @@
 /**
  * `vitae text` — render a variant as plain text to stdout.
  *
- * Writing files is a later layer's job, so this prints. It is genuinely
- * useful as an ATS-safe copy-paste source, and it is the fastest way to see
- * exactly what the renderer does with your content.
+ * Useful as an ATS-safe copy-paste source, and the fastest way to see what the
+ * renderer does with your content without opening Word. Writing a `.txt` file
+ * is `vitae build --format txt`; this one prints.
  */
 
-import { ResumeComposer, type ContentLibrary } from '../../domain/index.js';
+import { ResumeComposer } from '../../domain/index.js';
+import { toDiagnostic } from '../../app/index.js';
 import { PlainTextRenderer } from '../../render/index.js';
+import { bootstrap } from '../bootstrap.js';
+import { announceWorkspace, type CommandContext } from '../context.js';
+import { EXIT_CODES, type ExitCode } from '../exitCodes.js';
+
+/** Arguments specific to `text`. */
+export interface TextArgs {
+  readonly variantId: string | undefined;
+  readonly lineWidth: number | undefined;
+}
 
 /**
  * Composes and prints a variant as plain text.
  *
- * @param library - the resolved content library
- * @param variantId - variant to render
- * @param lineWidth - column at which right-aligned text ends
- * @returns 0 on success, 1 on any domain error
+ * @param context - presenter, output, and global options
+ * @param args - variant and line width
  */
-export async function runText(
-  library: ContentLibrary,
-  variantId: string,
-  lineWidth?: number,
-): Promise<number> {
-  const variant = library.getVariant(variantId);
+export async function runText(context: CommandContext, args: TextArgs): Promise<ExitCode> {
+  const wired = await bootstrap(context.options);
+  if (!wired.ok) {
+    context.output.err(context.presenter.diagnostics(wired.error));
+    return EXIT_CODES.failure;
+  }
+
+  announceWorkspace(context, wired.value.workspaceRoot, wired.value.warnings);
+
+  const library = await wired.value.app.library();
+  if (!library.ok) {
+    context.output.err(context.presenter.diagnostics(library.error.map(toDiagnostic)));
+    return EXIT_CODES.failure;
+  }
+
+  const variantId =
+    args.variantId ?? wired.value.defaultVariantId ?? library.value.listVariants()[0]?.id ?? '';
+
+  const variant = library.value.getVariant(variantId);
   if (!variant.ok) {
-    console.error(`error: ${variant.error.message}`);
-    console.error(`known variants: ${library.listVariants().map((v) => v.id).join(', ')}`);
-    return 1;
+    context.output.err(context.presenter.diagnostics([toDiagnostic(variant.error)]));
+    return EXIT_CODES.failure;
   }
 
-  const composed = new ResumeComposer().compose(variant.value, library);
+  const composed = new ResumeComposer().compose(variant.value, library.value);
   if (!composed.ok) {
-    for (const error of composed.error) {
-      console.error(`error [${error.code}]: ${error.message}`);
-    }
-    return 1;
+    context.output.err(context.presenter.diagnostics(composed.error.map(toDiagnostic)));
+    return EXIT_CODES.failure;
   }
 
-  const renderer = lineWidth === undefined ? new PlainTextRenderer() : new PlainTextRenderer(lineWidth);
-  console.log(await renderer.render(composed.value));
+  const renderer =
+    args.lineWidth === undefined ? new PlainTextRenderer() : new PlainTextRenderer(args.lineWidth);
+  context.output.out(await renderer.render(composed.value));
 
-  return 0;
+  return EXIT_CODES.success;
 }

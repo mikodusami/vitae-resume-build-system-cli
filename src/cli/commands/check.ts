@@ -1,45 +1,42 @@
 /**
- * `vitae check` — the claims gate, with no output file written.
+ * `vitae check` — validate without writing anything.
  *
- * This is where the application-layer decision from Layer 1 actually gets
- * made: the domain merely reports diagnostics, and this command chooses that
- * an error-severity diagnostic means a non-zero exit.
+ * Exits 2 when the only problem is an undefendable claim, so a CI step can
+ * treat "your resume has a claim you cannot back up" differently from "your
+ * content does not load".
  */
 
-import { ClaimsPolicy, ClaimsResolver, type ContentLibrary } from '../../domain/index.js';
+import { toDiagnostic } from '../../app/index.js';
+import { bootstrap } from '../bootstrap.js';
+import { announceWorkspace, type CommandContext } from '../context.js';
+import { EXIT_CODES, exitCodeForCheck, type ExitCode } from '../exitCodes.js';
+
+/** Arguments specific to `check`. */
+export interface CheckArgs {
+  readonly variantId: string | undefined;
+}
 
 /**
- * Validates a variant's claims.
+ * Validates one variant or the whole workspace.
  *
- * @param library - the resolved content library
- * @param variantId - variant to check
- * @returns 0 when clean or only warnings, 1 when any error-severity diagnostic
- * or resolution failure occurred
+ * @param context - presenter, output, and global options
+ * @param args - optional single-variant filter
  */
-export function runCheck(library: ContentLibrary, variantId: string): number {
-  const variant = library.getVariant(variantId);
-  if (!variant.ok) {
-    console.error(`error: ${variant.error.message}`);
-    return 1;
+export async function runCheck(context: CommandContext, args: CheckArgs): Promise<ExitCode> {
+  const wired = await bootstrap(context.options);
+  if (!wired.ok) {
+    context.output.err(context.presenter.diagnostics(wired.error));
+    return EXIT_CODES.failure;
   }
 
-  const resolved = new ClaimsResolver().resolve(variant.value, library);
-  if (!resolved.ok) {
-    for (const error of resolved.error) {
-      console.error(`error [${error.code}]: ${error.message}`);
-    }
-    return 1;
+  announceWorkspace(context, wired.value.workspaceRoot, wired.value.warnings);
+
+  const result = await wired.value.app.check({ variantId: args.variantId });
+  if (!result.ok) {
+    context.output.err(context.presenter.diagnostics(result.error.map(toDiagnostic)));
+    return EXIT_CODES.failure;
   }
 
-  const report = new ClaimsPolicy().evaluate(resolved.value);
-  for (const diagnostic of report.diagnostics) {
-    const stream = diagnostic.severity === 'error' ? console.error : console.log;
-    stream(`${diagnostic.severity} [${diagnostic.code}]: ${diagnostic.message}`);
-  }
-
-  if (report.diagnostics.length === 0) {
-    console.log(`${variantId}: all claims confident.`);
-  }
-
-  return report.hasErrors ? 1 : 0;
+  context.output.out(context.presenter.check(result.value));
+  return exitCodeForCheck(result.value);
 }

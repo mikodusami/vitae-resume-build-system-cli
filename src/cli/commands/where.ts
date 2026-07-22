@@ -1,39 +1,81 @@
 /**
- * `vitae where` — print which workspace resolved.
+ * `vitae where` — which workspace resolved, and by which rule.
  *
- * Exists so there is never ambiguity about what you just built. Prints the
- * resolved root and the derived paths; on failure, prints every location that
- * was searched.
+ * A small command that is disproportionately useful the first time a build
+ * touches a folder you did not expect.
  */
 
-import { Workspace, type WorkspaceResolveOptions } from '../../infra/index.js';
+import { toDiagnostic } from '../../app/index.js';
+import { Workspace, WORKSPACE_ENV_VAR } from '../../infra/index.js';
+import type { CommandContext } from '../context.js';
+import { EXIT_CODES, type ExitCode } from '../exitCodes.js';
 
 /**
- * Reports the resolved workspace and its paths.
+ * Reports the resolved workspace, its paths, and which rule matched.
  *
- * @param options - discovery overrides, e.g. an explicit `--dir`
- * @returns 0 when a workspace resolved, 1 when none did
+ * @param context - presenter, output, and global options
  */
-export function runWhere(options: WorkspaceResolveOptions = {}): number {
-  const resolved = Workspace.resolve(options);
+export function runWhere(context: CommandContext): ExitCode {
+  const explicitDir = context.options.dir;
+  const resolved = Workspace.resolve({ explicitDir });
 
   if (!resolved.ok) {
-    console.error(resolved.error.message);
-    console.error('\nsearched, in order:');
+    context.output.err(context.presenter.diagnostics([toDiagnostic(resolved.error)]));
+    context.output.err('\nsearched, in order:');
     for (const location of resolved.error.searched) {
-      console.error(`  ${location}`);
+      context.output.err(`  ${location}`);
     }
-    return 1;
+    return EXIT_CODES.failure;
   }
 
   const workspace = resolved.value;
-  console.log(workspace.root);
-  console.log(`  content   ${workspace.contentDir}`);
-  console.log(`  variants  ${workspace.variantsDir}`);
-  console.log(`  dist      ${workspace.distDir}`);
-  console.log(`  archive   ${workspace.archiveDir}`);
-  console.log(`  theme     ${workspace.themeFile}`);
-  console.log(`  config    ${workspace.configFile}`);
+  const rule = matchedRule(workspace.root, explicitDir);
 
-  return 0;
+  if (context.options.json) {
+    context.output.out(
+      JSON.stringify(
+        {
+          root: workspace.root,
+          rule,
+          contentDir: workspace.contentDir,
+          variantsDir: workspace.variantsDir,
+          distDir: workspace.distDir,
+          archiveDir: workspace.archiveDir,
+          themeFile: workspace.themeFile,
+          configFile: workspace.configFile,
+        },
+        null,
+        2,
+      ),
+    );
+    return EXIT_CODES.success;
+  }
+
+  context.output.out(context.color.path(workspace.root));
+  context.output.out(context.color.muted(`  matched by: ${rule}`));
+  context.output.out(`  content   ${workspace.contentDir}`);
+  context.output.out(`  variants  ${workspace.variantsDir}`);
+  context.output.out(`  dist      ${workspace.distDir}`);
+  context.output.out(`  archive   ${workspace.archiveDir}`);
+  context.output.out(`  theme     ${workspace.themeFile}`);
+  context.output.out(`  config    ${workspace.configFile}`);
+
+  return EXIT_CODES.success;
+}
+
+/** Names the resolution rule that produced this root. */
+function matchedRule(root: string, explicitDir: string | undefined): string {
+  if (explicitDir !== undefined) {
+    return '--dir';
+  }
+  if (process.env[WORKSPACE_ENV_VAR] !== undefined) {
+    return WORKSPACE_ENV_VAR;
+  }
+
+  const home = process.env.HOME ?? '';
+  if (home.length > 0 && root === `${home}/.vitae`) {
+    return 'home fallback (~/.vitae)';
+  }
+
+  return 'walked up from the current directory';
 }

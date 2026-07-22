@@ -1,17 +1,18 @@
 /**
  * `vitae build` — render variants and write them to `dist/`.
  *
- * This command turns reports into output and exit codes; the application layer
- * did the deciding and printed nothing. The three build statuses map to
- * genuinely different messages, because "policy refused to write this" and
- * "something is broken" are different problems for the person reading them.
+ * A handler translates arguments, calls a use case, presents the report, and
+ * returns an exit code. If this file ever starts branching on claim tiers or
+ * formats, that logic belongs in the application layer.
  */
 
-import type { OutputFormat, VariantBuildReport } from '../../app/index.js';
-import type { WiredApplication } from '../compositionRoot.js';
+import { toDiagnostic, type BuildReport, type OutputFormat } from '../../app/index.js';
+import { bootstrap } from '../bootstrap.js';
+import { announceWorkspace, type CommandContext } from '../context.js';
+import { EXIT_CODES, exitCodeForBuild, type ExitCode } from '../exitCodes.js';
 
-/** What to build. */
-export interface BuildOptions {
+/** Arguments specific to `build`. */
+export interface BuildArgs {
   readonly variantId: string | undefined;
   readonly all: boolean;
   readonly format: OutputFormat;
@@ -19,110 +20,43 @@ export interface BuildOptions {
   readonly outputDir: string | undefined;
 }
 
-/** Marker shown beside each status. */
-const STATUS_MARKERS: Readonly<Record<VariantBuildReport['status'], string>> = {
-  written: '✓',
-  blocked: '✗',
-  failed: '!',
-};
-
 /**
- * Builds one variant or all of them, printing a per-variant summary.
+ * Runs a build.
  *
- * @param wired - the composition root's application and provenance
- * @param options - what to build
- * @returns 0 when every variant was written, 1 otherwise
+ * @param context - presenter, output, and global options
+ * @param args - what to build
  */
-export async function runBuild(wired: WiredApplication, options: BuildOptions): Promise<number> {
-  const reports = options.all
-    ? await buildAll(wired, options)
-    : await buildOne(wired, options);
-
-  if (reports === undefined) {
-    return 1;
+export async function runBuild(context: CommandContext, args: BuildArgs): Promise<ExitCode> {
+  const wired = await bootstrap(context.options);
+  if (!wired.ok) {
+    context.output.err(context.presenter.diagnostics(wired.error));
+    return EXIT_CODES.failure;
   }
 
-  for (const report of reports) {
-    printReport(report);
+  announceWorkspace(context, wired.value.workspaceRoot, wired.value.warnings);
+
+  const variantId = args.variantId ?? wired.value.defaultVariantId;
+  if (!args.all && variantId === undefined) {
+    context.output.err('error: no variant given and no defaultVariant in config.json.');
+    context.output.err('usage: vitae build <variant> | vitae build --all');
+    return EXIT_CODES.failure;
   }
 
-  const blocked = reports.filter((report) => report.status === 'blocked');
-  if (blocked.length > 0) {
-    console.error(
-      `\n${blocked.length} variant(s) blocked by undefendable claims. ` +
-        'Fix the claim, or rebuild with --force if you have decided otherwise.',
-    );
-  }
-
-  return reports.every((report) => report.status === 'written') ? 0 : 1;
-}
-
-/** Runs a full build, or prints load diagnostics and returns undefined. */
-async function buildAll(
-  wired: WiredApplication,
-  options: BuildOptions,
-): Promise<readonly VariantBuildReport[] | undefined> {
-  const result = await wired.app.buildAll({
-    format: options.format,
-    force: options.force,
-    outputDir: options.outputDir,
-  });
+  const input = { format: args.format, force: args.force, outputDir: args.outputDir };
+  const result = args.all
+    ? await wired.value.app.buildAll(input)
+    : await wired.value.app.build({ ...input, variantId: variantId as string });
 
   if (!result.ok) {
-    printDiagnostics(result.error);
-    return undefined;
+    context.output.err(context.presenter.diagnostics(result.error.map(toDiagnostic)));
+    return EXIT_CODES.failure;
   }
 
-  return result.value.variants;
-}
+  const report: BuildReport =
+    'variants' in result.value
+      ? result.value
+      : { workspaceRoot: wired.value.workspaceRoot, variants: [result.value] };
 
-/** Runs a single-variant build, or prints load diagnostics. */
-async function buildOne(
-  wired: WiredApplication,
-  options: BuildOptions,
-): Promise<readonly VariantBuildReport[] | undefined> {
-  const variantId = options.variantId ?? wired.defaultVariantId;
-  if (variantId === undefined) {
-    console.error('error: no variant given and no defaultVariant in config.json.');
-    console.error('usage: vitae build <variant> | vitae build --all');
-    return undefined;
-  }
-
-  const result = await wired.app.build({
-    variantId,
-    format: options.format,
-    force: options.force,
-    outputDir: options.outputDir,
-  });
-
-  if (!result.ok) {
-    printDiagnostics(result.error);
-    return undefined;
-  }
-
-  return [result.value];
-}
-
-/** Prints one variant's outcome and any diagnostics it carried. */
-function printReport(report: VariantBuildReport): void {
-  const marker = STATUS_MARKERS[report.status];
-
-  if (report.status === 'written') {
-    console.log(`${marker} ${report.variantId}  ${report.outputPath} (${report.byteLength} bytes)`);
-  } else {
-    console.log(`${marker} ${report.variantId}  ${report.status}`);
-  }
-
-  for (const diagnostic of report.diagnostics) {
-    const stream = diagnostic.severity === 'error' ? console.error : console.log;
-    stream(`    ${diagnostic.severity} [${diagnostic.code}]: ${diagnostic.message}`);
-  }
-}
-
-/** Prints load-time failures, which prevent any build from being attempted. */
-function printDiagnostics(diagnostics: readonly { code: string; message: string }[]): void {
-  for (const diagnostic of diagnostics) {
-    console.error(`error [${diagnostic.code}]: ${diagnostic.message}`);
-  }
-  console.error(`\n${diagnostics.length} problem(s) found; nothing was built.`);
+  context.output.out(context.presenter.build(report));
+  return exitCodeForBuild(report);
 }
