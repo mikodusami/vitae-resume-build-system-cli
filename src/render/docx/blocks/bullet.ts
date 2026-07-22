@@ -8,10 +8,11 @@
  * here and asserted against in the tests.
  */
 
-import { Paragraph, TextRun as DocxTextRun } from 'docx';
+import { Paragraph } from 'docx';
 
 import type { Block } from '../../../domain/index.js';
 import type { StyleResolver } from '../StyleResolver.js';
+import { toParagraphChild } from './textRuns.js';
 
 /** Numbering configuration key defined by the docx renderer. */
 export const BULLET_NUMBERING_REFERENCE = 'bullets';
@@ -27,7 +28,7 @@ type BulletBlock = Extract<Block, { kind: 'bullet' }>;
  */
 export function renderBullet(block: BulletBlock, resolver: StyleResolver): Paragraph {
   return new Paragraph({
-    children: block.runs.map((run) => new DocxTextRun(resolver.runOptions(run))),
+    children: block.runs.map((run) => toParagraphChild(run, resolver)),
     numbering: { reference: BULLET_NUMBERING_REFERENCE, level: 0 },
     indent: resolver.bulletIndent,
     spacing: resolver.paragraphSpacing('bullet'),

@@ -40,13 +40,13 @@ import {
   TableCell,
   TableLayoutType,
   TableRow,
-  TextRun as DocxTextRun,
   VerticalAlign,
   WidthType,
 } from 'docx';
 
 import type { Block, TextRun } from '../../../domain/index.js';
 import type { StyleResolver } from '../StyleResolver.js';
+import { toParagraphChild } from './textRuns.js';
 
 /** The split-line variant of the IR block union. */
 type SplitLineBlock = Extract<Block, { kind: 'splitLine' }>;
@@ -58,11 +58,6 @@ type SplitLineBlock = Extract<Block, { kind: 'splitLine' }>;
  * this only decides where the wrap point falls on an unusually long title.
  */
 const LEFT_COLUMN_PERCENT = 68;
-
-/** Builds docx runs for one side of the line. */
-function toDocxRuns(runs: readonly TextRun[], resolver: StyleResolver): DocxTextRun[] {
-  return runs.map((run) => new DocxTextRun(resolver.runOptions(run)));
-}
 
 /**
  * Builds one cell of the line.
@@ -81,7 +76,7 @@ function buildCell(
   return new TableCell({
     children: [
       new Paragraph({
-        children: toDocxRuns(runs, resolver),
+        children: runs.map((run) => toParagraphChild(run, resolver)),
         spacing: resolver.paragraphSpacing('splitLine'),
         alignment,
       }),

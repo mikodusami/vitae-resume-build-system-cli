@@ -5,10 +5,11 @@
  * awards line.
  */
 
-import { AlignmentType, Paragraph, TextRun as DocxTextRun } from 'docx';
+import { AlignmentType, Paragraph } from 'docx';
 
 import type { Block } from '../../../domain/index.js';
 import type { StyleResolver } from '../StyleResolver.js';
+import { toParagraphChild } from './textRuns.js';
 
 /** The paragraph variant of the IR block union. */
 type ParagraphBlock = Extract<Block, { kind: 'paragraph' }>;
@@ -21,7 +22,7 @@ type ParagraphBlock = Extract<Block, { kind: 'paragraph' }>;
  */
 export function renderParagraph(block: ParagraphBlock, resolver: StyleResolver): Paragraph {
   return new Paragraph({
-    children: block.runs.map((run) => new DocxTextRun(resolver.runOptions(run))),
+    children: block.runs.map((run) => toParagraphChild(run, resolver)),
     spacing: resolver.paragraphSpacing('paragraph'),
     ...(block.align === 'center' ? { alignment: AlignmentType.CENTER } : {}),
   });
