@@ -18,8 +18,8 @@ resume you then replace with your own.
 
 **Documentation:** [getting started](docs/getting-started.md) ·
 [commands](docs/commands.md) · [content schema](docs/content-schema.md) ·
-[claims registry](docs/claims.md) · [theming](docs/theming.md) ·
-[architecture](docs/architecture.md) ·
+[claims registry](docs/claims.md) · [git workflow](docs/git-workflow.md) ·
+[theming](docs/theming.md) · [architecture](docs/architecture.md) ·
 [troubleshooting](docs/troubleshooting.md)
 
 ## Why this exists
@@ -39,7 +39,7 @@ Three problems with keeping resumes in Word:
 | Command                 | What it does                                              |
 | ----------------------- | --------------------------------------------------------- |
 | `vitae init [dir]`      | scaffold a `.vitae/` workspace with an example resume      |
-| `vitae build <variant>` | render and write to `dist/`; `--all`, `--force`, `--format`, `--archive`, `--pdf` |
+| `vitae build <variant>` | render and write to `dist/`; `--all`, `--force`, `--format`, `--archive`, `--label`, `--pdf` |
 | `vitae check [variant]` | validate claims and composition, writing nothing; `--pages` |
 | `vitae list`            | variants, their projects, and defensibility status         |
 | `vitae prep <variant>`  | interview checklist as markdown; `--out <file>`             |
@@ -99,13 +99,15 @@ one thing you have to be able to defend.
 ## Archiving what you sent
 
 ```bash
-vitae build software-engineer --archive
+vitae build software-engineer --archive --label "TechCorp"
 ```
 
-Writes `archive/2026-07-22_software-engineer_a1b2c3d.docx` alongside the normal
-`dist/` build. The hash is the commit of the **content that produced it**, so
-when a recruiter replies about something you sent three weeks ago,
-`git show a1b2c3d` reconstructs exactly what they're holding.
+Writes `archive/2026-07-22_software-engineer_techcorp_a1b2c3d.docx` alongside
+the normal `dist/` build. The hash is the commit of the **content that
+produced it**, so when a recruiter replies about something you sent three
+weeks ago, `git show a1b2c3d` reconstructs exactly what they're holding — but
+nobody remembers a hash three weeks later. `--label` puts the thing you'll
+actually search for, a company name, right in the filename.
 
 That guarantee is enforced rather than assumed:
 
@@ -116,8 +118,9 @@ That guarantee is enforced rather than assumed:
   reports the skip and leaves the file alone; the archive is a historical
   record, not a cache.
 
-Rule of thumb: `--archive` whenever you actually send one, plain builds while
-iterating.
+Rule of thumb: `--archive --label <who>` whenever you actually send one, plain
+builds while iterating. The full send-and-recall workflow — including for
+someone new to git — is in [docs/git-workflow.md](docs/git-workflow.md).
 
 ## The one-page gate
 
