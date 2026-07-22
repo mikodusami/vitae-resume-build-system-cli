@@ -7,6 +7,111 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Layer 5 — CLI, Composition Root & Scaffolding
+
+The tool is now genuinely usable by someone who has never seen it. These flows
+run in a scratch directory, not the repo.
+
+**Setup:** `npm run link` (re-link after this layer — the binary moved to
+`dist/cli/bin.js`).
+
+### Flow 5.A — The milestone: day one, from nothing
+
+```bash
+mkdir -p /tmp/vt-demo && cd /tmp/vt-demo && vitae init && vitae build --all
+```
+
+Expect `init` to report 14 files created and print next steps, then four
+variants built:
+
+```
+✓ backend            …/dist/resume_backend.docx (10626 bytes)
+✓ data-engineer      …/dist/resume_data_engineer.docx (10602 bytes)
+✓ software-engineer  …/dist/resume_software_engineer.docx (10651 bytes)
+✓ systems            …/dist/resume_systems.docx (10635 bytes)
+```
+
+Then `file .vitae/dist/*.docx` — all four `Microsoft Word 2007+` — and open
+one. This is the whole tool working: discovery, runtime TypeScript loading,
+validation, composition, the claims gate, rendering, and atomic writes.
+
+### Flow 5.B — The three exit codes
+
+```bash
+vitae check; echo "clean=$?"
+```
+
+Then flip a claim to `cannot-defend` in `.vitae/content/claims.ts`:
+
+```bash
+vitae check; echo "blocked=$?"
+vitae build --all; echo "build blocked=$?"
+```
+
+Then break a content file (`echo 'export default { name: 42 };' > .vitae/content/header.ts`):
+
+```bash
+vitae check; echo "broken=$?"
+```
+
+Expect `0`, `2`, `2`, `1`. The `2` is the point: a CI step can treat "you have
+a claim you cannot back up" differently from "your content does not load". With
+both problems at once you get `1` — fix what is broken first.
+
+### Flow 5.C — Machine-readable output
+
+```bash
+vitae list --json | jq '.variants[].variantId'
+vitae build --all --json | jq '.variants[] | {variantId, status, byteLength}'
+```
+
+Expect clean JSON. The `workspace:` notice and every warning went to stderr, so
+the pipe never sees them — that is the entire reason the JSON presenter exists.
+`vitae list --json 2>/dev/null` shows the separation plainly.
+
+### Flow 5.D — `init` protects your work
+
+```bash
+vitae init; echo "exit=$?"
+```
+
+Expect a refusal naming the existing workspace, exit 1, and — importantly —
+your edits still intact. `vitae init --force` overwrites.
+
+### Flow 5.E — No workspace is a message, not a stack trace
+
+```bash
+cd /tmp && vitae list; echo "exit=$?"
+```
+
+Expect one line naming every directory searched and suggesting `vitae init`,
+and exit 1. No jiti internals, no zod internals — the promise made back in the
+loading layer.
+
+### Flow 5.F — Where did that build go?
+
+```bash
+vitae where --dir /tmp/vt-demo/.vitae
+```
+
+Expect the root, `matched by: --dir`, and all six derived paths. Run it
+without `--dir` from inside a subdirectory and the rule becomes
+`walked up from the current directory`.
+
+### Flow 5.G — The onboarding test
+
+```bash
+npx vitest run tests/cli/
+```
+
+Expect 35 passed in well under a second. The first file is the important one:
+it runs `init` then `build --all` in a temp directory and asserts four real
+`.docx` files came out, each starting with the `PK` zip magic. It is the single
+highest-value test here — if it breaks, nobody gets far enough to hit any other
+bug.
+
+---
+
 ## Layer 4 — Application Services
 
 `vitae build` now exists: it resolves the workspace, loads content, composes,
