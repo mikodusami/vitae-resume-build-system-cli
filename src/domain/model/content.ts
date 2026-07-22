@@ -66,8 +66,15 @@ export interface AwardsLine {
 export interface Claim {
   readonly id: string;
   readonly defensibility: Defensibility;
-  /** Preparation notes surfaced by the interview-prep command. */
-  readonly reviewNotes?: readonly string[];
+  /**
+   * Preparation notes surfaced by the interview-prep command.
+   *
+   * Explicitly `| undefined` despite `exactOptionalPropertyTypes`: the loading
+   * layer binds zod schemas to these types, and an optional zod field yields
+   * `T | undefined`. Widening here keeps the domain the source of truth
+   * instead of forcing a cast at the boundary.
+   */
+  readonly reviewNotes?: readonly string[] | undefined;
 }
 
 /** One labelled row of the skills section. */
