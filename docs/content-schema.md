@@ -257,13 +257,19 @@ export default {
 | ------------ | -------------- | ---------------------------------------------------- |
 | `id`         | `string`       | non-empty; must equal the filename                   |
 | `label`      | `string`       | non-empty; appears in the docx `title` property       |
-| `summary`    | `string`       | non-empty; becomes the Summary section and the docx `description` |
+| `summary`    | `string?`      | optional; becomes the Summary section and the docx `description` |
 | `coursework` | `string`       | may be empty; overrides `education.ts` when non-empty |
 | `skills`     | `SkillGroup[]` | may be empty; `{ label, body }`, both non-empty       |
 | `projectIds` | `string[]`     | **at least one**; each must exist in `projects.ts`    |
 
 An unknown project id is `UNKNOWN_PROJECT`, and **every** unknown id in a
 variant is reported in one run rather than one per rebuild.
+
+`summary` is **absent entirely**, not an empty string, when a resume shouldn't
+have a Summary section — delete the line rather than setting `summary: ''`.
+When absent, the Summary section is left out of the document altogether
+(there is no heading with nothing under it), and the docx `description`
+property falls back to an empty string.
 
 `projectIds` is ordered — projects appear on the resume in exactly the order
 listed, so it doubles as your ranking of what matters for that role.
@@ -307,7 +313,8 @@ Composition always produces sections in this order. It is fixed — the renderer
 never reorders anything, and neither does a variant:
 
 1. **Header** (no heading) — name, then the contact line, both centered
-2. **Summary** — the variant's `summary`
+2. **Summary** — the variant's `summary`, when present; the section is left
+   out entirely when it is absent
 3. **Education** — institution (location right-aligned), degree with GPA
    folded in if present (date right-aligned), then coursework
 4. **Skills** — one line per group: bold label, then body
