@@ -1,0 +1,30 @@
+Ada Lovelace
+ada@example.com | 555-0100 | github.com/ada
+
+SUMMARY
+Data engineer focused on reliable pipelines.
+
+EDUCATION
+Analytical University, B.S. Computer Science                            May 2026
+Relevant Coursework: Distributed Systems, Data Mining
+
+SKILLS
+Languages: TypeScript, Python, SQL
+Infrastructure: Postgres, Airflow
+
+EXPERIENCE
+Research Assistant                                            Jan 2025 - Present
+Analytical University, Remote
+- Built an ingestion pipeline processing 2M rows nightly.
+
+PROJECTS
+Project etl | TypeScript, Postgres                            github.com/ada/etl
+- Shipped etl end to end.
+Project ranker | TypeScript, Postgres                      github.com/ada/ranker
+- Shipped ranker end to end.
+
+LEADERSHIP & AWARDS
+Teaching Assistant                                            Jan 2025 - Present
+CS Department, Remote
+- Built an ingestion pipeline processing 2M rows nightly.
+Awards: Dean's List, Hackathon Winner
