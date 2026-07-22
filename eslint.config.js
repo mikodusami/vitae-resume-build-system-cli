@@ -37,8 +37,17 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['**/app/**', '**/infra/**', '**/cli/**', '../app/*', '../infra/*', '../cli/*'],
-              message: 'domain/ may not import from outer layers (app, infra, cli).',
+              group: [
+                '**/app/**',
+                '**/infra/**',
+                '**/cli/**',
+                '**/render/**',
+                '../app/*',
+                '../infra/*',
+                '../cli/*',
+                '../render/*',
+              ],
+              message: 'domain/ may not import from outer layers (app, infra, render, cli).',
             },
             {
               group: NODE_BUILTIN_PATTERNS,
@@ -79,8 +88,27 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['**/cli/**'],
-              message: 'infra/ may not import from cli.',
+              group: ['**/cli/**', '**/render/**'],
+              message: 'infra/ may not import from cli or render.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Rendering adapters consume the domain IR and infra's loading utilities.
+    // They own presentation, so they must never be reached into by the domain
+    // and must not know about command dispatch.
+    files: ['src/render/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/cli/**', '**/app/**'],
+              message: 'render/ may not import from cli or app.',
             },
           ],
         },
