@@ -70,13 +70,17 @@ export default {
 `;
 
 const WORK_TS = `/**
- * Work history, shared across every variant.
+ * Work history, shared across every variant by default.
+ *
+ * A variant's optional \`jobIds\` selects and orders a subset — omit it to show
+ * every job here, in this file's order.
  *
  * Bullets lead with what changed and carry a number wherever one exists — a
  * reader remembers "cut p95 from 800ms to 210ms", never "improved performance".
  */
 export default [
   {
+    id: 'swe-intern',
     title: 'Software Engineering Intern',
     org: 'Northwind Logistics',
     location: 'Chicago, IL',
@@ -88,6 +92,7 @@ export default [
     ],
   },
   {
+    id: 'research-assistant',
     title: 'Undergraduate Research Assistant',
     org: 'State University Systems Lab',
     location: 'Remote',
@@ -163,6 +168,7 @@ const LEADERSHIP_TS = `/**
 export default {
   entries: [
     {
+      id: 'teaching-assistant',
       title: 'Teaching Assistant, Data Structures',
       org: 'State University',
       location: 'On campus',
@@ -304,7 +310,7 @@ which bullet changed between two versions of your resume — the thing a binary
     content/         the shared library every variant draws from
       header.ts        name + contact line
       education.ts     institution, location, degree, date, GPA, coursework
-      work.ts          job history
+      work.ts          job history, referenced by id from a variant's jobIds
       projects.ts      every project, referenced by id
       leadership.ts    leadership entries + the awards line
       claims.ts        the defensibility registry (read this one)
