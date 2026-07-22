@@ -20,6 +20,12 @@ export interface BuildArgs {
   readonly outputDir: string | undefined;
   /** Also write a dated, hash-stamped copy to `archive/`. */
   readonly archive?: boolean | undefined;
+  /**
+   * Who the archived copy is for, e.g. a company name. Only meaningful
+   * alongside `--archive`, and only for a single variant — `--all` builds
+   * every resume, and one label cannot name all of them.
+   */
+  readonly label?: string | undefined;
   /** Also convert to PDF, when LibreOffice is available. */
   readonly pdf?: boolean | undefined;
 }
@@ -46,11 +52,17 @@ export async function runBuild(context: CommandContext, args: BuildArgs): Promis
     return EXIT_CODES.failure;
   }
 
+  if (args.label !== undefined && args.all) {
+    context.output.err('error: --label names a single recipient; it cannot be used with --all.');
+    return EXIT_CODES.failure;
+  }
+
   const input = {
     format: args.format,
     force: args.force,
     outputDir: args.outputDir,
     archive: args.archive,
+    archiveLabel: args.label,
     pdf: args.pdf,
   };
   const result = args.all

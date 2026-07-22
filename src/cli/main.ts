@@ -111,6 +111,10 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
     .option('--force', 'build even when a claim cannot be defended')
     .option('--out <dir>', 'write here instead of the workspace dist/')
     .option('--archive', 'also write a dated, hash-stamped copy to archive/')
+    .option(
+      '--label <text>',
+      'who this archived copy is for, e.g. a company name (requires --archive, single variant only)',
+    )
     .option('--pdf', 'also convert to PDF (requires LibreOffice)')
     .action(
       async (
@@ -121,6 +125,7 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
           force?: boolean;
           out?: string;
           archive?: boolean;
+          label?: string;
           pdf?: boolean;
         },
       ) => {
@@ -139,6 +144,7 @@ function buildProgram(output: OutputChannel, setExitCode: (code: ExitCode) => vo
             force: options.force === true,
             outputDir: options.out,
             archive: options.archive === true,
+            label: options.label,
             pdf: options.pdf === true,
           }),
         );
