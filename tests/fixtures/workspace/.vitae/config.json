@@ -1,0 +1,5 @@
+{
+  "owner": "Ada Lovelace",
+  "defaultVariant": "data-engineer",
+  "output": { "filenamePrefix": "resume" }
+}
