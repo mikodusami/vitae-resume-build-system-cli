@@ -84,7 +84,29 @@ theme; if it does, the IR has leaked. Nothing in `src/render/` writes to disk.
 Determinism is asserted on `word/document.xml`, not whole buffers — see
 `decisions.md` for why byte-identity is unreachable with docx 9.x.
 
+Layer 4 (built) is `src/app/` — use cases and orchestration:
+
+- `usecases/` — one class per thing a user can do, one public `execute`.
+  Adding a command means adding a class, never editing a shared service.
+- `reports/` — plain data returned instead of printing. `blocked` (policy
+  refused) is deliberately distinct from `failed` (something broke).
+- `ports/` — `ArtifactWriter`, `ProgressListener`, `WorkspacePaths`. The last
+  one is declared here rather than importing infra's `Workspace`, which
+  satisfies it structurally; `joinPath` is injected for the same reason.
+- `Application.ts` — the facade. Memoizes the load *promise*, so `build --all`
+  reads content once and racing callers cannot double-load.
+
+**The hard rule here: `app/` never prints and never exits.** No `console`, no
+`process.exit`, no `fs`, no `docx`. ESLint enforces all of it. If a report
+lacks what the CLI needs to print a good message, enrich the report type —
+never add a `console.log`. The enforcement decision (undefendable claim blocks
+the write, `--force` overrides) lives in `BuildVariantUseCase`, one branch, by
+design.
+
 `src/cli/` dispatches argv (`main.ts`) with commands in `commands/`.
+`compositionRoot.ts` is the **only** place concrete adapters are constructed —
+a `new JitiModuleLoader(...)` anywhere else breaks the property that makes the
+app layer testable against fakes.
 Rules that keep it honest:
 
 - `contentSource.ts` decides provenance. No workspace anywhere → built-in
