@@ -59,6 +59,7 @@ export const educationSchema: z.ZodType<Education> = z.strictObject({
 });
 
 export const jobSchema: z.ZodType<Job> = z.strictObject({
+  id: idSchema,
   title: nonEmptyText,
   org: nonEmptyText,
   location: nonEmptyText,
@@ -103,6 +104,9 @@ export const variantSchema: z.ZodType<Variant> = z.strictObject({
   coursework: z.string(),
   skills: z.array(skillGroupSchema),
   projectIds: z.array(idSchema).min(1, 'a variant needs at least one project'),
+  // Absent entirely shows every job in work.ts, in file order — matching the
+  // tool's behavior before jobIds existed, so no existing variant breaks.
+  jobIds: z.array(idSchema).optional(),
 });
 
 /** Collection schemas for the array-valued content files. */
