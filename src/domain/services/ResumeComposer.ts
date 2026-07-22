@@ -45,6 +45,15 @@ export const SECTION_HEADINGS = {
 /** Separator between contact fragments and between skill labels and bodies. */
 const CONTACT_SEPARATOR = ' | ';
 
+/** Matches an address that already declares its own scheme, e.g. `mailto:`, `https://`. */
+const SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+/** Matches a bare email address with no scheme. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Matches a bare domain, optionally with a path, and no whitespace at all. */
+const BARE_URL_PATTERN = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+(\/\S*)?$/;
+
 /** Assembles a resume document from a variant and its content library. */
 export class ResumeComposer {
   /**
@@ -151,10 +160,41 @@ function deriveKeywords(skills: readonly SkillGroup[]): string[] {
 
 /** Name line plus contact line, both centered. */
 function composeHeaderBlocks(header: Header): Block[] {
+  const contactRuns: TextRun[] = [];
+  header.contact.forEach((entry, index) => {
+    if (index > 0) {
+      contactRuns.push(run(CONTACT_SEPARATOR, 'meta'));
+    }
+    contactRuns.push(run(entry, 'meta', undefined, classifyContactHref(entry)));
+  });
+
   return [
     paragraph([run(header.name, 'name', ['bold'])], 'center'),
-    paragraph([run(header.contact.join(CONTACT_SEPARATOR), 'meta')], 'center'),
+    paragraph(contactRuns, 'center'),
   ];
+}
+
+/**
+ * Decides whether a contact fragment should become a hyperlink, and to where.
+ *
+ * Contact entries mix things that should link (an email, a GitHub URL) with
+ * things that plainly should not (a phone number, a city) — the fragment's
+ * own text is the only signal available, so this stays deliberately narrow:
+ * an email becomes `mailto:`, a bare domain becomes `https://`, an address
+ * that already declares a scheme is left as-is, and everything else — a
+ * phone number, a location — is left unlinked rather than guessed at.
+ */
+function classifyContactHref(value: string): string | undefined {
+  if (SCHEME_PATTERN.test(value)) {
+    return value;
+  }
+  if (EMAIL_PATTERN.test(value)) {
+    return `mailto:${value}`;
+  }
+  if (BARE_URL_PATTERN.test(value)) {
+    return `https://${value}`;
+  }
+  return undefined;
 }
 
 /** Degree line with its date pushed right, then the selected coursework. */
@@ -215,7 +255,7 @@ function toHref(link: string): string | undefined {
   if (link.length === 0) {
     return undefined;
   }
-  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(link) ? link : `https://${link}`;
+  return SCHEME_PATTERN.test(link) ? link : `https://${link}`;
 }
 
 /** The single awards line: bold label followed by comma-joined entries. */
