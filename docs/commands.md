@@ -142,6 +142,10 @@ Only valid alongside `--archive`, and only for a single variant — `--all`
 builds every resume in the workspace, and one label cannot name all of them.
 Combining the two is a usage error, exit `1`.
 
+For the full send-and-recall workflow — what to send, when to commit, how to
+find an old application by company name — see
+[the git workflow guide](git-workflow.md#applying-to-a-job).
+
 ---
 
 ## `vitae check [variant]`
