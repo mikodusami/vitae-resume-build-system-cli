@@ -51,8 +51,10 @@ const ZOD_PREFIX = /^Invalid input:\s*/;
  */
 function describeIssue(issue: ZodIssue): string {
   if (issue.code === 'unrecognized_keys') {
-    const plural = issue.keys.length > 1 ? 's' : '';
-    return `unknown field${plural} ${issue.keys.join(', ')} — check for a typo, or remove it`;
+    // A single key is already named by the field path, so don't repeat it.
+    return issue.keys.length === 1
+      ? 'unknown field — check for a typo, or remove it'
+      : `unknown fields ${issue.keys.join(', ')} — check for typos, or remove them`;
   }
 
   return issue.message.replace(ZOD_PREFIX, '');
@@ -67,9 +69,15 @@ export class ZodDiagnosticMapper {
    * @param filePath - file being validated, for provenance in the message
    */
   public static toDiagnostics(error: ZodError, filePath: string): SchemaValidationError[] {
-    return error.issues.map(
-      (issue) =>
-        new SchemaValidationError(filePath, formatFieldPath(issue.path), describeIssue(issue)),
-    );
+    return error.issues.map((issue) => {
+      // An unrecognized key has no path of its own — zod reports it against the
+      // containing object — so point at the offending key instead of `(root)`.
+      const path =
+        issue.code === 'unrecognized_keys' && issue.keys.length === 1
+          ? [...issue.path, ...issue.keys]
+          : issue.path;
+
+      return new SchemaValidationError(filePath, formatFieldPath(path), describeIssue(issue));
+    });
   }
 }
