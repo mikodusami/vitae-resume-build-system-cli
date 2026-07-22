@@ -7,6 +7,124 @@ Layers not yet built have no flows here; this file grows one section per layer.
 
 ---
 
+## Layer 2 — Workspace & Content Loading
+
+The tool now reads a real `.vitae/` folder from disk. These flows use the
+committed fixture workspace at `tests/fixtures/workspace/`, which is a genuine,
+valid workspace — the same one the tests load.
+
+**Setup:** `npm run link` (or `npm run build` if you already linked once).
+Remember the linked binary runs `dist/`, so rebuild after changing `src/`.
+
+### Flow 2.A — Discovery finds the workspace by walking up
+
+```bash
+cd tests/fixtures/workspace && vitae where
+```
+
+Expect the resolved `.vitae/` path followed by its six derived paths (content,
+variants, dist, archive, theme, config). Now prove it walks up like `git`:
+
+```bash
+mkdir -p tests/fixtures/workspace/a/b/c && cd tests/fixtures/workspace/a/b/c && vitae where
+```
+
+Expect the *same* root, found three levels up. Clean up with
+`rm -rf tests/fixtures/workspace/a`.
+
+### Flow 2.B — Real content reaches the domain
+
+```bash
+cd tests/fixtures/workspace && vitae list && vitae demo software-engineer
+```
+
+Expect `workspace: …/.vitae` on stderr, then **two** variants — `data-engineer`
+and `software-engineer` — neither of which exists in the built-in sample. That
+is disk → jiti → zod → `ContentLibrary` → composer, end to end.
+
+`vitae demo` with no argument uses `defaultVariant` from `config.json`
+(`data-engineer`).
+
+### Flow 2.C — Convention over manifest: adding a variant is dropping in a file
+
+```bash
+cp tests/fixtures/workspace/.vitae/variants/software-engineer.ts \
+   tests/fixtures/workspace/.vitae/variants/backend.ts
+```
+
+Edit the copy's `id` to `backend`, then run `vitae list` from inside the
+workspace. Expect three variants — no registry was updated. Now edit the `id`
+to `backendd` and rerun: expect
+`VARIANT_ID_MISMATCH … declares id "backendd" but the filename says "backend"`,
+because ambiguity about which name wins is an error rather than a guess.
+Delete `backend.ts` when done.
+
+### Flow 2.D — Every problem is reported at once, with provenance
+
+Build a deliberately broken workspace:
+
+```bash
+rm -rf /tmp/vt-broken && mkdir -p /tmp/vt-broken/.vitae/content /tmp/vt-broken/.vitae/variants && cp tests/fixtures/workspace/.vitae/content/*.ts /tmp/vt-broken/.vitae/content/ && cp tests/fixtures/workspace/.vitae/variants/data-engineer.ts /tmp/vt-broken/.vitae/variants/
+```
+
+Then introduce three unrelated mistakes: set `label: 42` and rename `skills` to
+`skils` in `/tmp/vt-broken/.vitae/variants/data-engineer.ts`, and add
+`oops: true` to `/tmp/vt-broken/.vitae/content/header.ts`. Run:
+
+```bash
+cd /tmp/vt-broken && vitae list; echo "exit=$?"
+```
+
+Expect all of them in one run, each naming its file and dotted field path:
+
+```
+error [SCHEMA_VALIDATION_FAILED]: …/content/header.ts: oops — unknown field — check for a typo, or remove it
+error [SCHEMA_VALIDATION_FAILED]: …/variants/data-engineer.ts: label — expected string, received number
+error [SCHEMA_VALIDATION_FAILED]: …/variants/data-engineer.ts: skills — expected array, received undefined
+…
+N problem(s) found; nothing was built.
+exit=1
+```
+
+The `skils` typo proves the strict-object rule: an unknown key is a loud
+failure rather than a bullet that silently vanishes from your resume.
+
+### Flow 2.E — A syntax error is a message, not a stack trace
+
+Delete the final `];` from `/tmp/vt-broken/.vitae/content/claims.ts`, then run
+`vitae check` there.
+
+Expect one line — `error [MODULE_LOAD_FAILED]: …/claims.ts: ParseError:
+Unexpected token` — and no jiti internals. This is the anti-corruption layer's
+whole purpose: nothing from a third-party parser reaches the user raw.
+
+### Flow 2.F — A broken workspace never silently uses sample content
+
+Still inside `/tmp/vt-broken`, confirm `vitae list` exits 1 rather than
+printing Ada's sample resume. Then compare with a directory that has no
+workspace at all:
+
+```bash
+cd /tmp && vitae list
+```
+
+Expect `note: no .vitae/ folder found — using built-in sample content.` and
+exit 0. Found-but-broken fails; absent falls back — and both say which.
+
+### Flow 2.G — Overriding discovery
+
+```bash
+vitae where --dir tests/fixtures/workspace/.vitae
+VITAE_DIR=$PWD/tests/fixtures/workspace/.vitae vitae list
+vitae where --dir /nope; echo "exit=$?"
+```
+
+Expect the first two to resolve the fixture workspace from anywhere, and the
+third to exit 1 rather than quietly falling through to discovery — building the
+wrong resume is worse than an error.
+
+---
+
 ## Layer 1 — Domain Core
 
 There is no CLI yet, and that is correct for this layer: the domain composes a
