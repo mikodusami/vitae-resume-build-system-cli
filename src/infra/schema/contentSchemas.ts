@@ -21,6 +21,7 @@ import type {
   AwardsLine,
   Claim,
   Education,
+  GpaEntry,
   Header,
   Job,
   LeadershipEntry,
@@ -40,10 +41,18 @@ export const headerSchema: z.ZodType<Header> = z.strictObject({
   contact: z.array(nonEmptyText).min(1, 'needs at least one contact entry'),
 });
 
+export const gpaEntrySchema: z.ZodType<GpaEntry> = z.strictObject({
+  label: nonEmptyText,
+  value: nonEmptyText,
+});
+
 export const educationSchema: z.ZodType<Education> = z.strictObject({
   institution: nonEmptyText,
+  location: nonEmptyText,
   degree: nonEmptyText,
   date: nonEmptyText,
+  // Absent entirely, not empty, when a resume doesn't show a GPA.
+  gpa: gpaEntrySchema.optional(),
   // Coursework may be empty: a variant can supply its own, and some resumes
   // legitimately omit the line entirely.
   coursework: z.string(),
