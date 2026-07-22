@@ -97,7 +97,9 @@ export const skillGroupSchema: z.ZodType<SkillGroup> = z.strictObject({
 export const variantSchema: z.ZodType<Variant> = z.strictObject({
   id: idSchema,
   label: nonEmptyText,
-  summary: nonEmptyText,
+  // Absent entirely, not empty, when a resume shouldn't show a Summary
+  // section at all.
+  summary: nonEmptyText.optional(),
   coursework: z.string(),
   skills: z.array(skillGroupSchema),
   projectIds: z.array(idSchema).min(1, 'a variant needs at least one project'),
