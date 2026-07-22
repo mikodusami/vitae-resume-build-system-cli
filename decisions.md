@@ -644,3 +644,40 @@ empty string, matching the `Claim.reviewNotes` / `Education.gpa` precedent.
 array spread in ahead of the fixed ones — rather than emitting a heading with
 an empty paragraph under it; `composeMeta`'s docx `description` falls back to
 `''` when there is no summary to use.
+
+### 2026-07-22 · Jobs gain per-variant selection via jobIds
+
+Asked in passing ("is work customizable too?") — jobs were the one collection
+still shared unconditionally across every variant, unlike projects
+(`projectIds`), coursework, GPA, and summary, which had all just become
+per-variant. Confirmed the user wanted the same treatment before building it.
+
+`Job` gains a required `id: string`, mirroring `Project.id`. `Variant` gains
+an optional `jobIds?: readonly string[]`, mirroring `projectIds` — **absent
+entirely** means "every job in `work.ts`, in file order," which is the tool's
+behavior before this change, so no existing variant's output changes. Present
+means "exactly these jobs, in this order," same as project selection.
+
+`ContentLibrary` gained a `jobIndex` and `getJob`, built and duplicate-checked
+in `create()` alongside projects/claims/variants — `DUPLICATE_ID` now also
+catches a repeated job id. `ResumeComposer.resolveJobs` mirrors
+`resolveProjects` exactly, including accumulating every unknown id rather than
+stopping at the first. A new `UnknownJobError` / `UNKNOWN_JOB` follows the
+existing error-code convention. Unknown project ids and unknown job ids from
+the same `compose()` call are now combined into a single error report, rather
+than reporting only the first kind found — matching the project's "report
+everything wrong in one run" principle now that there are two ID kinds to
+resolve instead of one.
+
+**Accepted quirk**: `LeadershipEntry = Job` (a deliberate type alias, not a
+duplicate — see the earlier leadership-entries decision) means leadership
+entries must also carry an `id`, even though nothing ever looks one up —
+leadership always shows every entry, there is no `leadershipIds`. Diverging
+the two types to avoid this would undo that earlier decision for a purely
+cosmetic saving; the unused field is cheaper than the alternative.
+
+**Breaking content-schema change**: any existing `content/work.ts` or
+`content/leadership.ts` entry missing `id` now fails
+`SCHEMA_VALIDATION_FAILED` with a clear `id — expected string, received
+undefined`, naming the exact array index. Every fixture, the `init` template,
+and `examples/composeDemo.ts` were updated to match.
