@@ -103,3 +103,65 @@ npx vitest run -t "produces no font, size, or margin information"
 Expect: 1 passed. The composed document's JSON contains no font name, point
 size, margin, or spacing — proof that a future PDF or HTML renderer can consume
 the same IR without domain changes.
+
+### Flow 1.H — Install the `vitae` command globally
+
+```bash
+npm run link
+```
+
+This builds `src/` to `dist/` and `npm link`s the `bin` entry. Verify:
+
+```bash
+which vitae && vitae --version
+```
+
+Expect a path in your npm global bin and `0.1.0`. To remove it later:
+
+```bash
+npm run unlink
+```
+
+### Flow 1.I — Drive the domain from the terminal
+
+```bash
+vitae --help
+vitae list
+vitae demo
+vitae check
+vitae prep
+```
+
+Expect:
+
+- `--help` — four commands available now, four listed as planned, plus an
+  explicit note that content is still built-in sample content.
+- `list` — `data-engineer (Data Engineer)` with `! etl needs-review` and
+  `✓ ranker confident`.
+- `demo` — document metadata, then every section with each block's kind and
+  its flattened text; `···` marks where a `splitLine` pushes left and right
+  apart (`Analytical University, B.S. Computer Science ··· May 2026`).
+- `check` — one `warning [CLAIM_NEEDS_REVIEW]`.
+- `prep` — a `[ ]` checklist built from that claim's review notes.
+
+Omitting the variant argument uses the first variant; `vitae demo <id>` picks
+one explicitly.
+
+### Flow 1.J — Exit codes are meaningful
+
+```bash
+vitae check; echo "check=$?"
+vitae demo nope; echo "bad variant=$?"
+vitae build; echo "planned=$?"
+vitae bogus >/dev/null 2>&1; echo "unknown=$?"
+```
+
+Expect `0`, `1`, `2`, `2`. A `needs-review` claim warns but does not block; an
+unknown variant fails and prints the known IDs; a planned-but-unbuilt command
+exits 2 with the layer that will deliver it, rather than pretending to work.
+
+To see the honesty gate actually block, flip `etl`'s `defensibility` to
+`'cannot-defend'` in [src/cli/sampleContent.ts](src/cli/sampleContent.ts), run
+`npm run build`, then `vitae check; echo $?` — expect an `error
+[CLAIM_CANNOT_DEFEND]` and exit `1`, while `vitae demo` still composes the
+document. Revert when done.
