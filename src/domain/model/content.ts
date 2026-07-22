@@ -102,7 +102,8 @@ export interface Variant {
   readonly id: string;
   /** Used for the filename and the document title property. */
   readonly label: string;
-  readonly summary: string;
+  /** Omitted entirely, the Summary section is left out rather than rendered blank. */
+  readonly summary?: string | undefined;
   /** Overrides {@link Education.coursework} when non-empty. */
   readonly coursework: string;
   readonly skills: readonly SkillGroup[];
