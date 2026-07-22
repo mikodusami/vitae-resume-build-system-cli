@@ -9,6 +9,7 @@
 /** Stable identifiers for every domain failure. */
 export const DOMAIN_ERROR_CODES = {
   unknownProject: 'UNKNOWN_PROJECT',
+  unknownJob: 'UNKNOWN_JOB',
   unknownClaim: 'UNKNOWN_CLAIM',
   unknownVariant: 'UNKNOWN_VARIANT',
   duplicateId: 'DUPLICATE_ID',
@@ -45,6 +46,15 @@ export class UnknownProjectError extends DomainError {
 
   public constructor(public readonly projectId: string) {
     super(`Unknown project "${projectId}".`);
+  }
+}
+
+/** A variant referenced a job ID absent from `work.ts`. */
+export class UnknownJobError extends DomainError {
+  public override readonly code = DOMAIN_ERROR_CODES.unknownJob;
+
+  public constructor(public readonly jobId: string) {
+    super(`Unknown job "${jobId}".`);
   }
 }
 
