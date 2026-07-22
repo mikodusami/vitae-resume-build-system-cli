@@ -75,6 +75,32 @@ and `create` rejects duplicate project, claim, or variant IDs — a duplicate is
 a content bug, and catching it at construction beats a silently dropped entry
 at render time.
 
+### 2026-07-22 · A thin CLI shell ships ahead of its layer
+
+`vitae` is installable now via `npm run link` (which builds, then `npm link`s
+the `bin` entry `dist/cli/main.js`), rather than waiting for the CLI layer.
+
+Two constraints keep this from becoming a lie:
+
+- The shell only exposes commands the **domain alone** can answer — `demo`,
+  `list`, `check`, `prep`. Commands needing the filesystem (`init`, `build`,
+  `where`, `diff`) are listed in `--help` under "planned" and exit 2 with the
+  layer that will implement them, rather than silently doing nothing.
+- Content comes from `src/cli/sampleContent.ts`, stated plainly in `--help`.
+  When Layer 2 lands the loader, that constant becomes the seed for
+  `vitae init` templates instead of being deleted.
+
+Dependency direction is unchanged: `cli → domain` is inward, and no argument
+parser was added, so the runtime dependency count is still zero.
+
+### 2026-07-22 · `vitae check` is where the gate decision finally lives
+
+Layer 1 deliberately kept `compose` from refusing to build over an
+undefendable claim. `runCheck` is the first consumer to make that call: it
+exits 1 on any error-severity diagnostic and 0 on warnings. The policy stays
+injectable, so a future `--force` changes the severity mapping passed in rather
+than editing this command's logic.
+
 ### 2026-07-22 · Single public barrel at `src/domain/index.ts`
 
 Outer layers import from the barrel only. Layer 2's loader needs the model
