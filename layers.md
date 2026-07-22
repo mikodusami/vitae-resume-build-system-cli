@@ -1,3 +1,118 @@
+# vitae — Layer 5: CLI, Composition Root & Scaffolding
+
+**Goal:** make the tool runnable. Wire every concrete adapter in one place, expose commands, turn reports into terminal output and exit codes, and ship `vitae init` so someone with an empty folder can get to a working resume.
+
+**Depends on:** all previous layers.
+
+**Out of scope:** archiving, git integration, PDF conversion, page-count enforcement, `prep`, `diff`. Layer 6.
+
+**Milestone:** at the end of this layer, `vitae init && vitae build --all` produces four `.docx` files. First end-to-end run.
+
+---
+
+## Architectural decisions being locked in
+
+**1. One composition root.** Exactly one module constructs concrete classes (`JitiModuleLoader`, `FileContentRepository`, `ThemeLoader`, `FileArtifactWriter`, `DocxRenderer`) and assembles the dependency bundle for `Application`. Every other file receives collaborators. When someone later asks "where do I swap the module loader," the answer is one file — and if `new SomeAdapter()` ever appears in a command handler, the layering has broken.
+
+**2. Commands are adapters, not logic.** A command handler does four things: translate argv into a use-case input, call the use case, hand the report to a presenter, and return an exit code. If a handler contains a conditional about resumes, claims, or formats, that logic belongs in Layer 4. Keeping this rigid is what allows a future HTTP or MCP frontend to reuse the entire application without touching any of it.
+
+**3. Presentation is a strategy, not `console.log` sprinkled through commands.** A `ReportPresenter` interface with a human implementation and a JSON implementation, selected by `--json`. This costs almost nothing now and buys machine-readable output for CI, scripting, and the future application-tracking tool. It also forces reports to be complete: if the human presenter needs data the JSON one doesn't have, something was being computed in the wrong place.
+
+**4. Exit codes come from one policy table.** `0` success, `1` failure (broken content, I/O error, unknown variant), `2` blocked by claims policy. A single `exitCodeFor(report)` function, not scattered `process.exit` calls. Distinguishing 2 from 1 means a CI step or shell script can react to "you have an undefendable claim" differently from "your content is broken."
+
+**5. `init` bypasses the facade.** Every other command needs a workspace; `init` creates one. It talks to the filesystem and templates directly and never constructs `Application`. Trying to force it through the same path would mean making the facade tolerate a nonexistent workspace, which would weaken every other command's guarantees.
+
+**6. One error boundary at the top.** A single wrapper around dispatch catches anything unexpected, prints a short message with an error code, and returns exit `1`. Raw stack traces appear only under `--verbose`. Users should never see jiti or zod internals; that was the promise made back in Layer 2 and this is where it's kept.
+
+---
+
+## Deliverables
+
+### 5.1 — Binary entry (`src/cli/main.ts`, `bin/vitae`)
+
+Shebang, ESM-safe entry, `package.json` `"bin": { "vitae": "./dist/cli/main.js" }`. Global options available to all commands: `--dir <path>` (workspace override), `--json`, `--no-color`, `--verbose`. Commander (or equivalent) sets up subcommands; the parser is the only thing in the codebase that knows about argv.
+
+### 5.2 — Composition root (`src/cli/bootstrap.ts`)
+
+```ts
+async function bootstrap(
+  opts: GlobalOptions,
+): Promise<Result<Application, Diagnostic[]>>;
+```
+
+Resolves the `Workspace` (honoring `--dir` and `VITAE_DIR`), constructs `JitiModuleLoader`, `FileContentRepository`, `ThemeLoader`, `FileArtifactWriter`, and `RendererFactory`, loads content and theme, and returns a configured `Application` — or diagnostics if the workspace is missing or content is invalid. Workspace-not-found should produce a message that names the directories searched and suggests `vitae init`.
+
+### 5.3 — Presenters (`src/cli/presenters/`)
+
+```ts
+interface ReportPresenter {
+  build(report: BuildReport): string;
+  check(report: CheckReport): string;
+  list(report: ListReport): string;
+  diagnostics(diags: Diagnostic[]): string;
+}
+```
+
+`HumanPresenter` — aligned columns, one line per variant with status, path, and byte size; diagnostics grouped by file with the field path shown; warnings visually distinct from errors; color applied through a single helper that becomes a no-op under `--no-color` or when stdout isn't a TTY.
+
+`JsonPresenter` — `JSON.stringify` of the report, stable key order, no color, nothing else on stdout.
+
+Recommended detail for `list`: show each variant's projects with their defensibility tier inline, since "what's on this resume and can I defend it" is the actual question that command answers.
+
+### 5.4 — Exit code policy (`src/cli/exitCodes.ts`)
+
+`exitCodeFor(report): 0 | 1 | 2` plus named constants. Every command routes through it; nothing else calls `process.exit`.
+
+### 5.5 — Command handlers (`src/cli/commands/`)
+
+- **`build <variant|--all> [--format docx|txt] [--force] [--out <dir>]`** — bootstrap, call `BuildVariantUseCase` or `BuildAllUseCase`, present, exit.
+- **`check [<variant>|--all]`** — validation only, writes nothing, exit `2` when a variant is blocked.
+- **`list`** — variants with projects and claim tiers.
+- **`where`** — prints the resolved workspace root and which resolution rule matched (explicit, walked-up, or home fallback). Small command, disproportionately useful the first time a build touches a folder you didn't expect.
+- **`init [dir]`** — see below.
+
+Each handler stays under roughly thirty lines. If one grows past that, logic has leaked down from Layer 4.
+
+### 5.6 — `init` and templates (`src/cli/commands/init.ts`, `templates/`)
+
+Scaffolds a complete `.vitae/` in the target directory: `config.json`, `theme.ts`, all six `content/*.ts` files, one example `variants/*.ts`, a `.gitignore` containing `dist/`, and a short `README.md` documenting the content schema.
+
+Rules: refuse to overwrite an existing `.vitae/` unless `--force`; template content must be a plausible complete resume rather than empty stubs, because the fastest way to learn the schema is to see one filled in; and the templates are curated from the Layer 2 test fixture rather than copied wholesale — a fixture optimized for edge cases makes a poor first impression.
+
+Print next steps on success: edit `content/`, then run `vitae build --all`.
+
+### 5.7 — Error boundary (`src/cli/errorBoundary.ts`)
+
+Wraps dispatch. Unexpected throws become a one-line message plus an error code and exit `1`; the stack prints only under `--verbose`. Also handles `EPIPE` gracefully so piping into `head` doesn't produce noise.
+
+### 5.8 — Tests (`tests/cli/`)
+
+- **The onboarding test, and it's the important one:** in a temp directory, run `init`, then `build --all`, and assert four files exist and are non-empty. This guarantees the path a stranger takes on day one never silently breaks — the single highest-value test in the project given that you want others to clone this.
+- Exit codes: clean workspace → `0`; workspace with a `cannot-defend` claim → `2`; broken content → `1`.
+- `--json` emits parseable JSON and nothing else on stdout.
+- `--dir` overrides resolution; `where` reports the matched rule.
+- `init` refuses to clobber an existing workspace without `--force`.
+- Missing workspace produces a message naming the searched paths, not a stack trace.
+- Presenter unit tests against fixture reports (fast, no process spawning) — keep the slow end-to-end set small and the presenter set thorough.
+
+### 5.9 — Packaging and docs
+
+`npm run build` compiles to `dist/`; `npm i -g .` or `npm link` exposes `vitae`. README covering install, `init`, the command list, the content schema, and the claims-tier concept — the last one needs explaining, since a defensibility registry isn't something a reader will have seen in a resume tool before.
+
+---
+
+## Definition of done
+
+In a fresh directory: `vitae init` scaffolds a workspace, `vitae build --all` writes `.docx` files that open correctly in Word, `vitae list` shows variants with claim tiers, `vitae check` exits `2` when a variant carries an undefendable claim, and `vitae build --json` emits clean machine-readable output. No `new` on a concrete adapter appears outside `bootstrap.ts`.
+
+## Handoff note for Codex
+
+Two things to hold the line on. Command handlers must not accumulate logic — if `build.ts` starts branching on claim tiers or formats, move it to Layer 4. And the JSON presenter must write to stdout exclusively; any progress or warning text goes to stderr, or piping `--json` into `jq` breaks.
+
+## What Layer 6 will need from this
+
+Layer 6 adds `--archive` (a second `NamingStrategy` plus a git-hash provider), `--pdf` and the one-page gate (a `PdfConverter` port filling the `pageCounts` seam left in `CheckReport`), `prep` (rendering `reviewNotes` for a variant's claims), and `diff`. Each is a new use case plus a thin command — none should require modifying anything built in Layers 1 through 4, and if one does, that's the signal a seam was placed wrong.
+
 # vitae — Layer 4: Application Services
 
 **Goal:** wire the pieces into use cases. Resolve a workspace, load content, compose a document, evaluate claims, render, and write artifacts — returning structured reports about what happened.
