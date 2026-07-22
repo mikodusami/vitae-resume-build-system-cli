@@ -1,3 +1,126 @@
+# vitae — Layer 3: Theme & Rendering
+
+**Goal:** implement the `Renderer<T>` port from Layer 1. Own everything presentational — fonts, sizes, spacing, margins — load the user's theme, and turn a `ResumeDocument` into a `.docx` buffer.
+
+**Depends on:** Layer 1 (domain types, `Renderer` port) and Layer 2 (`Workspace` for the theme file path, `ModuleLoader` to read it, diagnostic mapper for validation errors).
+
+**Out of scope:** writing files to disk, page-count enforcement, PDF conversion, CLI. The renderer returns a buffer; deciding where bytes land is Layer 4's job.
+
+---
+
+## Architectural decisions being locked in
+
+**1. Theme enters the system here and nowhere earlier.** Layer 2 deliberately left `themeFile` as a path. This layer defines the `Theme` type, its schema, its defaults, and its loader. Nothing below Layer 3 has ever heard of a font — that's the property that keeps the domain reusable.
+
+**2. One seam translates meaning into appearance.** A single `StyleResolver` maps `(TextRole, Emphasis[])` → concrete docx run options using the theme. Every "what does a `meta` run look like" question resolves in that one class. Restyling the entire resume means editing the resolver or the theme, never the block renderers.
+
+**3. Block renderers form a typed registry, not a growing switch.** Handlers are keyed by block kind:
+
+```ts
+type BlockRendererMap = {
+  [K in Block["kind"]]: BlockRenderer<Extract<Block, { kind: K }>>;
+};
+```
+
+A mapped type over the union gives you both properties at once: pluggability (adding a block kind means adding a handler) _and_ exhaustiveness (TypeScript refuses to compile a registry missing a kind). This is the pattern to reach for whenever "open for extension" and "prove nothing was forgotten" both matter.
+
+**4. Renderers are pure functions of `(document, theme)`.** No filesystem, no clock, no globals. Same inputs, same bytes — which is what makes rendering testable and what makes the archive hashes in Layer 6 meaningful.
+
+**5. Ship a second renderer to prove the seam is real.** A trivial `PlainTextRenderer` is a deliverable of this layer, not a future nice-to-have. If the IR has quietly become docx-shaped, writing a plaintext renderer will hurt immediately — while the design is cheap to fix — rather than in six months when you want an HTML portfolio version. It also earns its keep as an ATS-safe output and makes rendering tests readable.
+
+**6. Themes merge over defaults.** A user's `theme.ts` may specify one field or forty. Load it as a deep-partial, validate, and merge onto `DEFAULT_THEME`. Someone who only wants a different font shouldn't have to restate every spacing constant, and defaults living in the tool means theme files stay small and diffable.
+
+---
+
+## Deliverables
+
+### 3.1 — `Theme` model and defaults (`src/render/theme/`)
+
+Type plus a `DEFAULT_THEME` carrying the proven values from the working generator:
+
+```ts
+interface Theme {
+  font: string; // "Calibri"
+  page: { width: number; height: number; margin: number }; // 12240 × 15840, 720 (DXA)
+  sizes: Record<TextRole, number>; // name 30, sectionHeading 20, body 19, meta 18, link 18
+  rightTab: number; // 10800
+  bullet: { indent: number; hanging: number }; // 260 / 160
+  spacing: {
+    sectionBefore: number;
+    sectionAfter: number; // 110 / 30
+    bulletAfter: number;
+    line: number; // 16 / 228
+    entryBefore: number;
+    entryAfter: number; // 50 / 14
+  };
+  sectionRule: { enabled: boolean; size: number; color: string }; // true, 4, "444444"
+}
+```
+
+All units are DXA (1440 = 1 inch) — document that in a comment, because half-point font sizes and DXA lengths coexisting in one object is exactly the kind of thing that bites six months later.
+
+### 3.2 — Theme loading (`src/render/theme/ThemeLoader.ts`)
+
+Reads `workspace.themeFile` via the Layer 2 `ModuleLoader`, validates against a **deep-partial** zod schema, deep-merges onto `DEFAULT_THEME`, and returns `Result<Theme, LoadDiagnostic[]>`. A missing theme file is not an error — it means defaults. Reuse Layer 2's `ZodDiagnosticMapper` so theme errors read identically to content errors.
+
+### 3.3 — `StyleResolver` (`src/render/docx/StyleResolver.ts`)
+
+```ts
+class StyleResolver {
+  constructor(private readonly theme: Theme) {}
+  runOptions(run: TextRun): IRunOptions; // font, size from role, bold/italics from emphasis
+  paragraphSpacing(kind: Block["kind"]): ISpacingProperties;
+  sectionHeadingBorder(): IBordersOptions | undefined;
+  pageProperties(): ISectionPropertiesOptions["page"];
+}
+```
+
+This is the only class in the codebase that reads `theme.sizes`.
+
+### 3.4 — Block renderers (`src/render/docx/blocks/`)
+
+One small module per block kind, each `(block, resolver) => Paragraph`:
+
+- **`paragraph`** — runs joined, optional center alignment (used by the name and contact lines).
+- **`bullet`** — a `Paragraph` with `numbering: { reference: "bullets", level: 0 }` and the theme's indent.
+- **`splitLine`** — left runs, a tab character run, right runs, with a `TabStopType.RIGHT` stop at `theme.rightTab`. This renders every job header, education line, and project header.
+
+Assemble them into the typed registry from decision 3.
+
+### 3.5 — `DocxRenderer` (`src/render/docx/DocxRenderer.ts`)
+
+`implements Renderer<Buffer>`. Constructor takes a `Theme` and builds its own `StyleResolver` and registry.
+
+`render(doc)` composes: document-level properties from `doc.meta` (`title`, `creator`, `description`, `keywords` joined, `lastModifiedBy: "vitae"`), the bullet numbering config, page setup from the theme, then walks sections — emitting a heading paragraph (bordered per theme) followed by each block dispatched through the registry — and returns `Packer.toBuffer(...)`.
+
+Encode these docx-js constraints explicitly, since each one is a silent-corruption bug rather than a crash: never emit `\n` inside a run (separate paragraphs only); never insert a literal `•` (use the numbering config); page size must be set explicitly or you get A4; a `PageBreak` must live inside a `Paragraph`.
+
+### 3.6 — `PlainTextRenderer` (`src/render/text/PlainTextRenderer.ts`)
+
+`implements Renderer<string>`. Sections as uppercase headings, bullets as `- `, split lines as left + padding + right at a configurable column width. Ignores theme entirely — which is the point: it demonstrates that a renderer can consume the IR without any presentational input, confirming the domain didn't leak.
+
+### 3.7 — Tests (`tests/render/`)
+
+- **Theme merge:** partial theme overrides only the specified keys; missing file yields exact defaults; an invalid value produces a mapped diagnostic.
+- **`StyleResolver`:** each role maps to the expected size; emphasis combinations produce bold/italics correctly.
+- **docx structural assertions:** render a fixture document, unzip the buffer, and assert on `word/document.xml` — the bullet numbering reference is present, a `splitLine` produced a right tab stop at the themed position, no literal bullet characters exist, section headings carry the border. Then assert `docProps/core.xml` contains the title and creator from `DocumentMeta`.
+- **Plaintext golden file:** a committed expected-output file. This is your fastest regression signal on IR changes.
+- **Determinism:** rendering the same document twice yields byte-identical buffers (guard the archive-hash guarantee now, not after it breaks).
+
+---
+
+## Definition of done
+
+Given a `ResumeDocument` from the Layer 1 composer and a `Theme`, `new DocxRenderer(theme).render(doc)` returns a buffer that opens in Word with your existing formatting intact, and `new PlainTextRenderer().render(doc)` returns readable text from the same input with no theme involved. Nothing in `src/render/` writes to disk. `src/domain/` remains untouched.
+
+## Handoff note for Codex
+
+Two failure modes to watch. First, the renderer must not "improve" content — no inferring, reordering, or injecting text that isn't in the IR; if the output needs something the IR can't express, that's a Layer 1 change, not a special case here. Second, if writing `PlainTextRenderer` requires reaching for anything docx-specific from the document model, stop and report it rather than working around it — that's the IR leaking, and it's the one design flaw this layer exists to detect.
+
+## What Layer 4 will need from this
+
+The application layer composes everything: resolve workspace → load content → compose document → validate claims → render → write to `dist/`. It will construct renderers by output format, so keep `DocxRenderer` and `PlainTextRenderer` behind the `Renderer<T>` port with no format-selection logic living inside this layer.
+
 # vitae — Layer 2: Workspace & Content Loading
 
 **Goal:** implement the `ContentRepository` port from Layer 1. Find the `.vitae/` folder, load the user's TypeScript content and variant files at runtime, validate them at the boundary, and produce a `ContentLibrary` — or a readable list of diagnostics explaining why not.
