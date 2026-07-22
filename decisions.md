@@ -568,3 +568,28 @@ comparing rather than treating them as a genuine difference.
 `PlainTextRenderer` needed no change: it already reads only `run.text`, which
 is exactly the kind of thing the presentation-free IR is supposed to
 guarantee.
+
+### 2026-07-22 · Header contact entries link individually, narrowly
+
+Follow-on from the project-link hyperlink fix: the header's email and social
+links weren't clickable either, and for a structural reason the project-link
+fix didn't touch — `header.contact` was joined into one string and rendered
+as a single `TextRun`. A run carries at most one `href` for its whole span, so
+nothing in that string could ever be individually linked.
+
+`composeHeaderBlocks` now emits one run per contact entry, with plain
+separator runs (no href) in between, so each fragment can be classified on
+its own. The classification is deliberately narrower than the project-link
+`toHref`: a contact list mixes things that should link (an email, a GitHub
+URL) with things that must never link (a phone number, a city), and the
+fragment's text is the only signal available. `classifyContactHref` only acts
+on two unambiguous patterns — a bare email becomes `mailto:`, a bare domain
+becomes `https://` — and leaves an already-schemed address (`tel:`, `mailto:`
+written explicitly) untouched. Everything else is left as plain text rather
+than guessed at, which is the deciding difference from `toHref` on
+`Project.link`: that field is schema-defined to *be* a link in its entirety,
+so any non-empty value can safely get a scheme; a contact array has no such
+guarantee per entry.
+
+The scheme-detection regex is now shared between `toHref` and
+`classifyContactHref` rather than duplicated.
