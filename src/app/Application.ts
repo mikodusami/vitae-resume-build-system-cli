@@ -115,7 +115,7 @@ export class Application {
       stamper: deps.stamper,
       // A factory rather than an instance: the stamp is only known once the
       // repository has been inspected, which happens per build.
-      archiveNaming: (stamp) => new ArchiveNaming(stamp),
+      archiveNaming: (stamp, label) => new ArchiveNaming(stamp, undefined, label),
       pdfConverter: deps.pdfConverter,
     });
 
@@ -152,6 +152,7 @@ export class Application {
     readonly force?: boolean | undefined;
     readonly outputDir?: string | undefined;
     readonly archive?: boolean | undefined;
+    readonly archiveLabel?: string | undefined;
     readonly pdf?: boolean | undefined;
   }): Promise<Result<VariantBuildReport, DomainError[]>> {
     const library = await this.library();
