@@ -1,7 +1,8 @@
 /**
  * ArchiveNaming — dated, hash-stamped filenames for sent resumes.
  *
- * `2026-07-22_llm-infrastructure_a1b2c3d.docx`
+ * `2026-07-22_llm-infrastructure_a1b2c3d.docx`, or with a label,
+ * `2026-07-22_llm-infrastructure_techcorp_a1b2c3d.docx`.
  *
  * This is a second implementation of the `NamingStrategy` interface Layer 4
  * introduced, with no change to the default strategy and none to the use case
@@ -10,12 +11,15 @@
  * speculative generality.
  *
  * The hash identifies **inputs**: it is the commit that produced the build, so
- * `git show <hash>` reconstructs exactly what a recruiter is holding.
+ * `git show <hash>` reconstructs exactly what a recruiter is holding. The hash
+ * alone, though, is not something anyone recalls two weeks later — a person
+ * remembers "I sent TechCorp the data-engineer resume," not a commit hash. The
+ * label exists to make the archive directory scannable by that same memory.
  */
 
 import type { Variant } from '../../domain/index.js';
 import type { BuildStamp } from '../ports/environment.js';
-import type { NamingStrategy } from './ArtifactNaming.js';
+import { slugify, type NamingStrategy } from './ArtifactNaming.js';
 import type { OutputFormat } from '../reports/reports.js';
 
 /** File extension per output format. */
@@ -61,13 +65,18 @@ export class ArchiveNaming implements NamingStrategy {
   /**
    * @param stamp - provenance of the content being built
    * @param now - injected so filenames are testable and deterministic
+   * @param label - free text naming who this was sent to, e.g. a company; the
+   *   part of the filename meant for a human to recognise, not `git show`
    */
   public constructor(
     private readonly stamp: BuildStamp,
     private readonly now: Date = new Date(),
+    private readonly label?: string,
   ) {}
 
   public filenameFor(variant: Variant, format: OutputFormat): string {
-    return `${isoDate(this.now)}_${variant.id}_${formatStamp(this.stamp)}.${EXTENSIONS[format]}`;
+    const labelSlug = this.label === undefined ? '' : slugify(this.label);
+    const middle = labelSlug.length > 0 ? `${variant.id}_${labelSlug}` : variant.id;
+    return `${isoDate(this.now)}_${middle}_${formatStamp(this.stamp)}.${EXTENSIONS[format]}`;
   }
 }

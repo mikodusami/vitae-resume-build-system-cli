@@ -40,6 +40,30 @@ describe('ArchiveNaming', () => {
     expect(naming.filenameFor(makeVariant('v'), 'txt')).toBe('2026-07-22_v_abc1234.txt');
   });
 
+  it('inserts a slugified label before the stamp', () => {
+    const naming = new ArchiveNaming({ hash: 'a1b2c3d', dirty: false }, WHEN, 'TechCorp');
+
+    expect(naming.filenameFor(makeVariant('data-engineer'), 'docx')).toBe(
+      '2026-07-22_data-engineer_techcorp_a1b2c3d.docx',
+    );
+  });
+
+  it('slugifies a multi-word label the same way variant ids are slugified', () => {
+    const naming = new ArchiveNaming({ hash: 'a1b2c3d', dirty: false }, WHEN, 'Acme Data Team');
+
+    expect(naming.filenameFor(makeVariant('data-engineer'), 'docx')).toBe(
+      '2026-07-22_data-engineer_acme_data_team_a1b2c3d.docx',
+    );
+  });
+
+  it('omits the label segment entirely when none is given', () => {
+    const naming = new ArchiveNaming({ hash: 'a1b2c3d', dirty: false }, WHEN);
+
+    expect(naming.filenameFor(makeVariant('data-engineer'), 'docx')).toBe(
+      '2026-07-22_data-engineer_a1b2c3d.docx',
+    );
+  });
+
   it('implements the same interface as the default strategy', () => {
     // The point of the Layer 4 naming seam: a second strategy drops in with no
     // change to the first, and no change to the use case that consumes it.
