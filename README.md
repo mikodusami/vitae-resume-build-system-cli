@@ -15,18 +15,19 @@ content model, the composition engine, the claims policy, and the
 rendering-agnostic document IR. No filesystem, no docx, no CLI yet — those are
 later layers, and the domain is deliberately unable to reach them.
 
-**Layer 2 (Workspace & Content Loading) — built.** The tool now finds your
-`.vitae/` folder, loads your TypeScript content at runtime, validates it at the
-boundary, and hands the domain a `ContentLibrary` — or a list of diagnostics
-naming every file and field that is wrong.
+**Layer 3 (Theme & Rendering) — built.** A composed document now renders to a
+real `.docx` (themed, with proper bullet numbering and right-aligned dates) and
+to plain text. Writing files to `dist/` is Layer 4's job — renderers return a
+buffer and stop.
 
-| Layer                     | State                                         |
-| ------------------------- | --------------------------------------------- |
-| 1 — Domain core           | ✅ built                                      |
-| 2 — Workspace & loading   | ✅ built                                      |
-| CLI shell                 | ✅ runnable (`where/list/demo/check/prep`)    |
-| 3 — Rendering (docx)      | not started                                   |
-| 4+ — Archive, init, diff  | not started                                   |
+| Layer                    | State                                           |
+| ------------------------ | ----------------------------------------------- |
+| 1 — Domain core          | ✅ built                                        |
+| 2 — Workspace & loading  | ✅ built                                        |
+| 3 — Theme & rendering    | ✅ built                                        |
+| CLI shell                | ✅ runnable (`where/list/demo/text/check/prep`) |
+| 4 — App layer & `build`  | not started                                     |
+| 5+ — init, archive, diff | not started                                     |
 
 ## Getting started
 
@@ -49,6 +50,7 @@ vitae --help          # what exists now, and what is still planned
 vitae where           # which .vitae/ folder resolved, and its paths
 vitae list            # variants, projects, defensibility status
 vitae demo            # compose a variant and print its document outline
+vitae text            # render a variant as plain text (ATS-safe); --width N
 vitae check           # claims gate; exits 1 if a claim cannot be defended
 vitae prep            # interview checklist from that variant's review notes
 ```
@@ -67,7 +69,12 @@ vitae list --dir tests/fixtures/workspace/.vitae
 ```
 
 `init`, `build`, and `diff` exit 2 with a message naming the layer that will
-deliver them rather than pretending to work.
+deliver them rather than pretending to work. To produce an actual `.docx`
+before `vitae build` exists:
+
+```bash
+npx vite-node examples/renderDocx.ts data-engineer /tmp/resume.docx
+```
 
 There is also a runnable script covering the same ground without installing:
 
@@ -97,9 +104,13 @@ src/
 │   ├── schema/      zod schemas bound to domain types + diagnostic mapper
 │   ├── config/      config.json, with defaults and forward compatibility
 │   └── content/     FileContentRepository — the ContentRepository port
+├── render/     # everything presentational — fonts, sizes, spacing, margins
+│   ├── theme/       Theme, DEFAULT_THEME, ThemeLoader (merges over defaults)
+│   ├── docx/        StyleResolver, block registry, DocxRenderer
+│   └── text/        PlainTextRenderer — takes no theme, by design
 └── cli/        # command dispatch + built-in sample content
     ├── main.ts       argv dispatch, exit codes, usage
-    └── commands/     where, demo, list, check, prep
+    └── commands/     where, demo, text, list, check, prep
 ```
 
 Four load-bearing ideas, recorded in [decisions.md](decisions.md):
@@ -118,6 +129,9 @@ Four load-bearing ideas, recorded in [decisions.md](decisions.md):
   schema is annotated `z.ZodType<DomainType>`, so adding a field to the domain
   and forgetting the schema breaks the build instead of confusing a user at
   runtime. The domain leads; the boundary follows.
+- **Two renderers ship, on purpose.** `PlainTextRenderer` takes no theme at
+  all. If the IR ever quietly becomes docx-shaped, that renderer breaks
+  immediately — while the design is still cheap to fix.
 
 ## Scripts
 
