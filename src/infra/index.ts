@@ -14,3 +14,4 @@ export * from './loader/FakeModuleLoader.js';
 export * from './schema/contentSchemas.js';
 export * from './schema/mapper.js';
 export * from './content/FileContentRepository.js';
+export * from './io/FileArtifactWriter.js';
