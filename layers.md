@@ -1,3 +1,150 @@
+# vitae — Layer 4: Application Services
+
+**Goal:** wire the pieces into use cases. Resolve a workspace, load content, compose a document, evaluate claims, render, and write artifacts — returning structured reports about what happened.
+
+**Depends on:** Layer 1 (composer, claims policy, ports), Layer 2 (workspace, repository), Layer 3 (renderers, theme loader).
+
+**Out of scope:** terminal output, argument parsing, exit codes, colors, spinners, `init` scaffolding, archiving, PDF. Those are Layer 5 and 6.
+
+---
+
+## Architectural decisions being locked in
+
+**1. The application layer never prints and never exits.** No `console.log`, no `process.exit`, no chalk. Every use case returns a structured report; Layer 5 decides how to display it and what exit code it implies. This is the rule that makes use cases testable without capturing stdout, and it's the one most likely to be violated under deadline pressure — enforce it with a lint rule alongside the boundary rules from Layer 1.
+
+**2. One class per use case, one public method.** `BuildVariantUseCase.execute(input)`. Not a service object with eleven methods that grows into a god class. Each use case names a thing the user can do, owns its own orchestration, and can be understood in isolation. Adding a command later means adding a class, not editing a shared one.
+
+**3. Enforcement policy lives here, not in the domain.** Layer 1 deliberately separated composing a document from judging its claims. This layer makes the call: by default a `cannot-defend` claim blocks writing an artifact, `--force` overrides it, and `check` evaluates without writing at all. Because the decision is one branch in one use case rather than a rule baked into the composer, changing it later is trivial.
+
+**4. The composition root is deferred to Layer 5.** Use cases receive their collaborators through constructor injection and depend only on interfaces. Nothing here calls `new FileContentRepository(...)` or `new JitiModuleLoader(...)`. Concrete wiring happens once, at the outermost edge, in Layer 5 — which is what lets every test in this layer run against in-memory fakes with no disk and no jiti.
+
+**5. Format selection belongs here.** Layer 3 built renderers behind a common port and deliberately contained no format-choosing logic. A small `RendererFactory` maps `"docx" | "txt"` to an instance. Adding a third output format touches the factory and nothing else.
+
+**6. Naming is a policy object, not string concatenation.** Artifact filenames come from an `ArtifactNaming` class, not inline template literals. Layer 6's archive naming (`2026-07-22_llm-infrastructure_a1b2c3d.docx`) is the same policy with a different strategy, so extracting it now avoids duplicating the convention in two places later.
+
+**7. Load once per `Application` instance.** `build --all` resolves the workspace and reads content a single time, then composes four documents from the same in-memory `ContentLibrary`. Repository access is memoized at the facade, not inside each use case.
+
+---
+
+## Deliverables
+
+### 4.1 — Ports (`src/app/ports/`)
+
+```ts
+interface ArtifactWriter {
+  write(
+    absPath: string,
+    bytes: Buffer | string,
+  ): Promise<Result<WrittenArtifact, IoError>>;
+  ensureDir(absPath: string): Promise<Result<void, IoError>>;
+}
+
+interface ProgressListener {
+  // optional, injected as a no-op by default
+  onVariantStart(variantId: string): void;
+  onVariantDone(report: VariantBuildReport): void;
+}
+```
+
+`ProgressListener` exists so a future `--all` build can stream feedback without the application layer knowing what a terminal is.
+
+### 4.2 — `FileArtifactWriter` (`src/infra/io/FileArtifactWriter.ts`)
+
+The concrete implementation: creates parent directories on demand, writes atomically (temp file then rename, so an interrupted build never leaves a truncated `.docx`), and maps `fs` errors to `IoError` with the offending path.
+
+### 4.3 — Report model (`src/app/reports/`)
+
+Plain data returned by use cases — no formatting, no ANSI:
+
+```ts
+interface VariantBuildReport {
+  variantId: string;
+  status: "written" | "blocked" | "failed";
+  outputPath?: string;
+  byteLength?: number;
+  diagnostics: Diagnostic[]; // reuses the Layer 1 / Layer 2 shape
+}
+
+interface BuildReport {
+  variants: VariantBuildReport[];
+  workspaceRoot: string;
+}
+interface CheckReport {
+  variants: VariantCheckReport[];
+  pageCounts?: Record<string, number>;
+}
+interface ListReport {
+  variants: VariantSummary[];
+} // id, label, project count, claim tiers
+```
+
+`status: "blocked"` is distinct from `"failed"` on purpose: blocked means the build worked but policy refused to write it (an undefendable claim), failed means something was broken. The user experience of those two is completely different and the CLI needs to tell them apart.
+
+### 4.4 — `ArtifactNaming` (`src/app/naming/`)
+
+```ts
+interface NamingStrategy {
+  filenameFor(variant: Variant, format: OutputFormat): string;
+}
+class DefaultNaming implements NamingStrategy {} // "resume_llm_infrastructure.docx"
+```
+
+Prefix comes from config (Layer 2), extension from format. Layer 6 adds `ArchiveNaming` implementing the same interface.
+
+### 4.5 — `RendererFactory` (`src/app/render/RendererFactory.ts`)
+
+Maps an `OutputFormat` to a `Renderer<Buffer | string>`, constructing `DocxRenderer` with the loaded theme and `PlainTextRenderer` without one. Unknown format is a typed error, not a throw.
+
+### 4.6 — `BuildVariantUseCase` (`src/app/usecases/BuildVariantUseCase.ts`)
+
+Input: `{ variantId, format, force?, outputDir? }`.
+
+Sequence: fetch the variant from the library (unknown → `failed`) → compose via `ResumeComposer` (resolution errors → `failed`, all of them) → evaluate `ClaimsPolicy` → if errors exist and `force` is false, return `blocked` with diagnostics and write nothing → otherwise render via the factory, ensure the output directory, write, and return `written` with path, byte length, and any warnings.
+
+Warnings never block. A `needs-review` claim should appear in the report and still produce a file — you need to be able to build a resume for a project you haven't reviewed yet, you just need to be told.
+
+### 4.7 — `BuildAllUseCase`
+
+Iterates variants, delegating each to `BuildVariantUseCase`, emitting progress events, and **continuing past failures** so one broken variant doesn't hide the status of the other three. Aggregates into a single `BuildReport`.
+
+### 4.8 — `CheckWorkspaceUseCase`
+
+Composes and validates every variant, writing nothing. Returns diagnostics per variant. Leave a typed seam for the page-count gate (`pageCounts` is optional in `CheckReport`) — Layer 6 fills it once PDF conversion exists, without changing this use case's signature.
+
+### 4.9 — `ListVariantsUseCase`
+
+Summarizes each variant: id, label, ordered project names, and the count of claims at each defensibility tier. This is the command that answers "what's on which resume and can I defend it" at a glance, so the data it returns should make that renderable without further lookups.
+
+### 4.10 — `Application` facade (`src/app/Application.ts`)
+
+Holds the resolved workspace, memoized `ContentLibrary`, loaded theme, and constructed use cases. Exposes `build`, `buildAll`, `check`, `list`. Constructed from a dependency bundle — an interface listing the ports it needs — so Layer 5 supplies real adapters and tests supply fakes.
+
+### 4.11 — Tests (`tests/app/`)
+
+Fakes for `ContentRepository`, `Renderer`, and `ArtifactWriter`; zero disk access.
+
+- Happy path writes to the expected path with the expected filename.
+- A `cannot-defend` claim yields `blocked`, writes nothing, and names the claim; the same input with `force: true` yields `written`.
+- A `needs-review` claim yields `written` **with** a warning diagnostic.
+- Unknown variant and unresolvable project IDs yield `failed` with all diagnostics, not just the first.
+- `buildAll` with one broken variant still reports on the other three.
+- The repository's `load()` is called exactly once across a `buildAll` (proves memoization).
+- Writer failure (simulated `IoError`) surfaces as `failed` with the path, not an unhandled rejection.
+
+---
+
+## Definition of done
+
+Every use case runs end to end against in-memory fakes. No file in `src/app/` imports `fs`, `docx`, `chalk`, or `commander`, and none contains `console.` or `process.exit`. The full real pipeline still isn't runnable — nothing has wired concrete adapters together yet — and that's correct for this layer.
+
+## Handoff note for Codex
+
+The temptation here is to have a use case print a nice summary or exit non-zero when validation fails. Don't. Use cases return reports; Layer 5 turns reports into output and exit codes. If a report doesn't carry enough information for the CLI to print a good message, the fix is a richer report type, never a `console.log` in the application layer.
+
+## What Layer 5 will need from this
+
+The CLI builds the composition root: resolve `Workspace`, construct `JitiModuleLoader`, `FileContentRepository`, `ThemeLoader`, `FileArtifactWriter`, assemble the dependency bundle, and hand it to `Application`. It then maps each `Report` to formatted output and an exit code, and adds `init`, which is the one command that runs _without_ a workspace and therefore bypasses the facade entirely.
+
 # vitae — Layer 3: Theme & Rendering
 
 **Goal:** implement the `Renderer<T>` port from Layer 1. Own everything presentational — fonts, sizes, spacing, margins — load the user's theme, and turn a `ResumeDocument` into a `.docx` buffer.
