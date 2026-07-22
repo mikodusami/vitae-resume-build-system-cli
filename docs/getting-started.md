@@ -38,7 +38,7 @@ schema is to read one that is filled in.
 ├── .gitignore         ignores dist/
 ├── content/           the shared library every variant draws from
 │   ├── header.ts        name + contact line
-│   ├── education.ts     degree, date, default coursework
+│   ├── education.ts     institution, location, degree, date, GPA, coursework
 │   ├── work.ts          job history
 │   ├── projects.ts      every project, referenced by id
 │   ├── leadership.ts    leadership entries + the awards line
@@ -95,7 +95,8 @@ vitae doctor    # what this machine can and cannot do
 Work in this order — it follows the dependencies:
 
 1. **`content/header.ts`** — your name and contact line.
-2. **`content/education.ts`** — your degree.
+2. **`content/education.ts`** — your degree, institution, and location. `gpa`
+   is optional; delete it if you'd rather not show one.
 3. **`content/work.ts`** — your jobs. Lead each bullet with what changed and
    carry a number wherever one honestly exists.
 4. **`content/projects.ts`** — every project you might put on a resume, each

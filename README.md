@@ -148,7 +148,7 @@ unlocks — the first thing to run when a clone isn't behaving.
 ├── theme.ts           fonts, sizes, spacing — everything presentational
 ├── content/
 │   ├── header.ts        name + contact line
-│   ├── education.ts     degree, date, default coursework
+│   ├── education.ts     institution, location, degree, date, GPA, coursework
 │   ├── work.ts          job history, shared across variants
 │   ├── projects.ts      every project, referenced by id
 │   ├── leadership.ts    leadership entries + the awards line
