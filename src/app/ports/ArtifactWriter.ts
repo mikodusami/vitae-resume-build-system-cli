@@ -28,4 +28,13 @@ export interface ArtifactWriter {
 
   /** Creates a directory and any missing parents. */
   ensureDir(absPath: string): Promise<Result<void, IoError>>;
+
+  /**
+   * Whether something already exists at this path.
+   *
+   * Needed because archives are append-only: an existing archive filename
+   * means that exact content was already archived today, and the correct
+   * response is to report the skip, never to overwrite a historical record.
+   */
+  exists(absPath: string): Promise<boolean>;
 }

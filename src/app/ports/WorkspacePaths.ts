@@ -11,4 +11,6 @@ export interface WorkspacePaths {
   readonly root: string;
   /** Where latest builds land. */
   readonly distDir: string;
+  /** Where dated, hash-stamped sent versions accumulate. */
+  readonly archiveDir: string;
 }

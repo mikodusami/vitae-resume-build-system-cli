@@ -17,6 +17,8 @@ export interface BuildAllInput {
   readonly format: OutputFormat;
   readonly force?: boolean | undefined;
   readonly outputDir?: string | undefined;
+  readonly archive?: boolean | undefined;
+  readonly pdf?: boolean | undefined;
 }
 
 /** Builds every variant in the library. */
@@ -50,6 +52,8 @@ export class BuildAllUseCase {
         format: input.format,
         force: input.force,
         outputDir: input.outputDir,
+        archive: input.archive,
+        pdf: input.pdf,
       });
 
       this.progress.onVariantDone(report);

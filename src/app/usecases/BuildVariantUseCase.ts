@@ -14,8 +14,10 @@ import type {
   Diagnostic,
   DomainError,
   ResumeComposer,
+  Variant,
 } from '../../domain/index.js';
 import type { ArtifactWriter } from '../ports/ArtifactWriter.js';
+import type { BuildStamp, ContentStamper, PdfConverter } from '../ports/environment.js';
 import type { NamingStrategy } from '../naming/ArtifactNaming.js';
 import type { RendererFactory } from '../render/RendererFactory.js';
 import { toDiagnostic, type OutputFormat, type VariantBuildReport } from '../reports/reports.js';
@@ -28,6 +30,15 @@ export interface BuildVariantInput {
   readonly force?: boolean | undefined;
   /** Overrides the workspace's `dist/`. */
   readonly outputDir?: string | undefined;
+  /**
+   * Also write a dated, hash-stamped copy to `archive/`.
+   *
+   * An additional write of the same bytes, not a different operation — which
+   * is why this is a field rather than a parallel use case.
+   */
+  readonly archive?: boolean | undefined;
+  /** Also convert the result to PDF beside the document. */
+  readonly pdf?: boolean | undefined;
 }
 
 /** Collaborators, all injected — this class constructs no adapters. */
@@ -40,6 +51,22 @@ export interface BuildVariantDependencies {
   readonly claimsResolver: ClaimsResolver;
   /** Joins path segments; injected so this layer never imports `node:path`. */
   readonly joinPath: (...segments: string[]) => string;
+  /** Where archived copies accumulate; from the workspace. */
+  readonly archiveDir?: string | undefined;
+  /**
+   * The workspace root, which is where provenance is read from.
+   *
+   * Deliberately not `archiveDir`: that directory is created on demand *after*
+   * this point, and asking git about a path that does not exist yet reports
+   * "not a repository" — silently stamping every first archive `nogit`.
+   */
+  readonly workspaceRoot?: string | undefined;
+  /** Provenance for `--archive`; absent means archiving is unavailable. */
+  readonly stamper?: ContentStamper | undefined;
+  /** Names archived copies, given a stamp. Injected for testable dates. */
+  readonly archiveNaming?: ((stamp: BuildStamp) => NamingStrategy) | undefined;
+  /** Converts to PDF for `--pdf`; absent means the feature is unavailable. */
+  readonly pdfConverter?: PdfConverter | undefined;
 }
 
 /** Builds one variant into one artifact. */
@@ -105,6 +132,18 @@ export class BuildVariantUseCase {
       return failed(input.variantId, [written.error], validation.diagnostics);
     }
 
+    const extras: Diagnostic[] = [];
+
+    const archive =
+      input.archive === true
+        ? await this.archiveCopy(variant.value, input, bytes, extras)
+        : undefined;
+
+    const pdfPath =
+      input.pdf === true
+        ? await this.writePdf(bytes, outputDir, variant.value.id, extras)
+        : undefined;
+
     // Warnings never block. You need to be able to build a resume for a
     // project you have not reviewed yet — you just need to be told.
     return {
@@ -112,9 +151,131 @@ export class BuildVariantUseCase {
       status: 'written',
       outputPath: written.value.path,
       byteLength: written.value.byteLength,
-      diagnostics: validation.diagnostics,
+      diagnostics: [...validation.diagnostics, ...extras],
+      ...(archive === undefined ? {} : archive),
+      ...(pdfPath === undefined ? {} : { pdfPath }),
     };
   }
+
+  /**
+   * Writes the dated, hash-stamped archive copy.
+   *
+   * Archives are append-only: an existing file at the computed name means this
+   * exact content was already archived today, so it is reported and skipped.
+   * Overwriting would corrupt a historical record to save a rebuild.
+   *
+   * @param extras - accumulator for warnings; archiving never fails a build
+   */
+  private async archiveCopy(
+    variant: Variant,
+    input: BuildVariantInput,
+    bytes: Buffer | string,
+    extras: Diagnostic[],
+  ): Promise<{ archivePath?: string; archiveSkipped?: boolean } | undefined> {
+    if (
+      this.deps.stamper === undefined ||
+      this.deps.archiveNaming === undefined ||
+      this.deps.archiveDir === undefined ||
+      this.deps.workspaceRoot === undefined
+    ) {
+      extras.push(warning('ARCHIVE_UNAVAILABLE', 'Archiving is not available in this environment.'));
+      return undefined;
+    }
+
+    const stamped = await this.deps.stamper.stamp(this.deps.workspaceRoot);
+    if (!stamped.ok) {
+      extras.push(warning('ARCHIVE_STAMP_FAILED', stamped.error.message));
+      return undefined;
+    }
+
+    if (stamped.value.hash === undefined) {
+      extras.push(
+        warning(
+          'ARCHIVE_NO_GIT',
+          'This workspace is not a git repository, so the archive is stamped "nogit" — ' +
+            '`git show` will not reconstruct it. Run `git init` in your .vitae/ folder.',
+        ),
+      );
+    } else if (stamped.value.dirty) {
+      extras.push(
+        warning(
+          'ARCHIVE_DIRTY',
+          `Working tree has uncommitted changes, so this archive is stamped ` +
+            `"${stamped.value.hash}-dirty" — that commit does not contain what was built. ` +
+            'Commit first if you want the archive to be reconstructible.',
+        ),
+      );
+    }
+
+    const naming = this.deps.archiveNaming(stamped.value);
+    const filename = naming.filenameFor(variant, input.format);
+    const archivePath = this.deps.joinPath(this.deps.archiveDir, filename);
+
+    const ensured = await this.deps.writer.ensureDir(this.deps.archiveDir);
+    if (!ensured.ok) {
+      extras.push(warning('ARCHIVE_FAILED', ensured.error.message));
+      return undefined;
+    }
+
+    if (await this.deps.writer.exists(archivePath)) {
+      extras.push(
+        warning('ARCHIVE_EXISTS', `Already archived today as ${filename}; leaving it untouched.`),
+      );
+      return { archivePath, archiveSkipped: true };
+    }
+
+    const archived = await this.deps.writer.write(archivePath, bytes);
+    if (!archived.ok) {
+      extras.push(warning('ARCHIVE_FAILED', archived.error.message));
+      return undefined;
+    }
+
+    return { archivePath };
+  }
+
+  /**
+   * Converts the rendered document to PDF beside it.
+   *
+   * A missing LibreOffice warns rather than fails: the `.docx` was written
+   * successfully, and losing that because an optional dependency is absent
+   * would be the wrong trade.
+   */
+  private async writePdf(
+    bytes: Buffer | string,
+    outputDir: string,
+    variantId: string,
+    extras: Diagnostic[],
+  ): Promise<string | undefined> {
+    if (this.deps.pdfConverter === undefined) {
+      extras.push(warning('PDF_UNAVAILABLE', 'PDF conversion is not available in this environment.'));
+      return undefined;
+    }
+
+    if (typeof bytes === 'string') {
+      extras.push(warning('PDF_SKIPPED', 'PDF conversion applies to docx output, not text.'));
+      return undefined;
+    }
+
+    const converted = await this.deps.pdfConverter.convert(bytes, variantId);
+    if (!converted.ok) {
+      extras.push(warning('PDF_FAILED', converted.error.message));
+      return undefined;
+    }
+
+    const pdfPath = this.deps.joinPath(outputDir, `${variantId}.pdf`);
+    const written = await this.deps.writer.write(pdfPath, converted.value);
+    if (!written.ok) {
+      extras.push(warning('PDF_FAILED', written.error.message));
+      return undefined;
+    }
+
+    return pdfPath;
+  }
+}
+
+/** Builds a warning diagnostic; these never block a build. */
+function warning(code: string, message: string): Diagnostic {
+  return { severity: 'warning', code, message };
 }
 
 /** Builds a failure report, preserving any diagnostics gathered before it. */

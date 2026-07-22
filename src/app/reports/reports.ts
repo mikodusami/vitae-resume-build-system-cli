@@ -6,7 +6,7 @@
  * `console.log` in a use case.
  */
 
-import type { Diagnostic, DomainError } from '../../domain/index.js';
+import type { Defensibility, Diagnostic, DomainError } from '../../domain/index.js';
 
 /** Output formats the tool can produce. */
 export const OUTPUT_FORMATS = ['docx', 'txt'] as const;
@@ -31,6 +31,17 @@ export interface VariantBuildReport {
   readonly outputPath?: string | undefined;
   readonly byteLength?: number | undefined;
   readonly diagnostics: readonly Diagnostic[];
+  /** Where the archived copy landed, when `--archive` was given. */
+  readonly archivePath?: string | undefined;
+  /**
+   * Set when an archive already existed at that name.
+   *
+   * Archives are append-only: the same content archived twice in one day is
+   * reported and skipped, never overwritten.
+   */
+  readonly archiveSkipped?: boolean | undefined;
+  /** Where the PDF landed, when `--pdf` was given. */
+  readonly pdfPath?: string | undefined;
 }
 
 /** Outcome of a build command, one entry per variant attempted. */
@@ -81,6 +92,58 @@ export interface VariantSummary {
 /** Outcome of a list command. */
 export interface ListReport {
   readonly variants: readonly VariantSummary[];
+}
+
+/** One project's entry in the prep checklist. */
+export interface PrepEntry {
+  readonly claimId: string;
+  readonly projectNames: readonly string[];
+  readonly notes: readonly string[];
+}
+
+/** Prep entries grouped by defensibility tier. */
+export interface PrepSection {
+  readonly tier: Defensibility;
+  readonly entries: readonly PrepEntry[];
+}
+
+/** The interview checklist for one variant. */
+export interface PrepReport {
+  readonly variantId: string;
+  readonly label: string;
+  /** ISO timestamp, so a saved checklist records when it was generated. */
+  readonly generatedAt: string;
+  readonly sections: readonly PrepSection[];
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+/** What changed in the files a variant depends on. */
+export interface DiffReport {
+  readonly variantId: string;
+  readonly ref: string;
+  /** Exactly the files this variant reads, relative to the workspace. */
+  readonly paths: readonly string[];
+  /** Raw unified diff; empty when nothing changed. */
+  readonly patch: string;
+  readonly diagnostics: readonly Diagnostic[];
+}
+
+/** One capability's availability, for `doctor`. */
+export interface CapabilityReport {
+  readonly name: string;
+  readonly available: boolean;
+  readonly version?: string | undefined;
+  /** What stops working without it, and how to install it. */
+  readonly note: string;
+}
+
+/** Everything `doctor` knows about this environment. */
+export interface DoctorReport {
+  readonly workspaceRoot: string;
+  readonly variantCount: number;
+  readonly isGitRepository: boolean;
+  readonly capabilities: readonly CapabilityReport[];
+  readonly diagnostics: readonly Diagnostic[];
 }
 
 /**
